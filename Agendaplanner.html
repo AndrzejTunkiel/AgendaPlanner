@@ -1551,8 +1551,8 @@ function tint(hex, a) { const n = parseInt(hex.slice(1), 16), m = c => Math.roun
 function buildSVG() {
   const P = 14, AX = 50, CW = 400, G = 18, TW = 70, B = 18, BS = 22, PAD = 6, MK = 22;
   const all = doc.days, ax = { s: Math.floor(Math.min(...all.map(d => d.start)) / 60) * 60, e: Math.min(1440, Math.ceil(Math.max(...all.map(d => d.end)) / 60) * 60) }, people = [...doc.participants].sort(byName);
-  const cols = []; all.forEach((d, di) => (d.rooms || [{ id: '', name: '' }]).forEach((r, ri) => cols.push({ d, di, r, ri })));
-  const n = cols.length, anyMulti = all.some(d => d.rooms.length > 1);
+  const n = all.length, anyMulti = all.some(d => d.rooms.length > 1);
+  const roomWOf = d => (CW - 14) / ((d.rooms && d.rooms.length) || 1);
   // centre initials on their actual glyph box (not the font's em box) so they sit in the middle of the circle
   const svgAv = (p, cx, cy, r) => {
     const i = initialsOf(p), fs = (i.length > 2 ? 0.66 : 0.8) * r;
@@ -1569,10 +1569,12 @@ function buildSVG() {
   /* 1. measure each item at its lane width */
   const plans = new Map();
   let ppm = 1;
-  cols.forEach(({ d, di, r, ri }) => {
+  all.forEach((d, di) => {
+    const roomW = roomWOf(d);
+    (d.rooms || [{ id: '', name: '' }]).forEach((r, ri) => {
     const rits = roomItems(d, r.id), lay = lanes(rits);
     for (const it of rits) {
-      const L = lay.get(it.id), iw = (CW - 14) / L.n - 4, inner = iw - 14 - PAD;
+      const L = lay.get(it.id), iw = roomW / L.n - 4, inner = iw - 14 - PAD;
       const side = iw >= 210, colW = side ? inner - TW - 8 : inner;
       const ppl = peopleOf(it), notes = String(it.notes || '').trim();
       const reserve = notes ? MK : 0;
@@ -1594,6 +1596,7 @@ function buildSVG() {
       plans.set(it.id, pl);
       ppm = Math.max(ppm, (reqTight + 3) / (it.end - it.start));
     }
+    });
   });
   ppm = Math.min(ppm, 8);
   /* Constant hour spacing: start from the smallest scale where every item is readable, then try the scales
@@ -1625,19 +1628,27 @@ function buildSVG() {
 
   /* 3. days and items */
   const refs = [];
-  cols.forEach(({ d, di, r, ri }, ci) => {
-    const x = P + AX + ci * (CW + G);
-    const red = all.length > 1 ? `DAY ${di + 1}` : (anyMulti ? (r.name || `Room ${ri + 1}`).toUpperCase() : '');
-    const wd = [d.date ? dayLabel(d, di) : '', anyMulti ? (r.name || `Room ${ri + 1}`) : ''].filter(Boolean).join(' · ') || (all.length > 1 ? `Day ${di + 1}` : 'Agenda');
+  all.forEach((d, di) => {
+    const x = P + AX + di * (CW + G);
+    const multi = d.rooms.length > 1, roomW = roomWOf(d);
+    const red = all.length > 1 ? `DAY ${di + 1}` : '';
+    const wd = d.date ? dayLabel(d, di) : (all.length > 1 ? `Day ${di + 1}` : 'Agenda');
     if (red) o.push(`<text x="${x + 2}" y="${P + HEAD + 8}" font-size="10.5" font-weight="700" fill="#ff000f" letter-spacing="0.6">${esc(red)}</text>`);
     o.push(`<text x="${x + 2}" y="${P + HEAD + 27}" font-size="14.5" font-weight="650" fill="#151821">${esc(fitText(wd, 14.5, 650, CW - 90))}</text>`);
     o.push(`<text x="${x + CW - 2}" y="${P + HEAD + 27}" font-size="11.5" fill="#687080" text-anchor="end">${fmt(d.start)}–${fmt(d.end)}</text>`);
     const wy = top + (d.start - ax.s) * ppm, wh = (d.end - d.start) * ppm;
     o.push(`<rect x="${x}" y="${wy}" width="${CW}" height="${wh}" rx="12" fill="#fafbfc" stroke="#e2e5eb"/>`);
     for (let m = Math.ceil(d.start / 60) * 60; m < d.end; m += 60) { if (m === d.start) continue; const y = top + (m - ax.s) * ppm; o.push(`<line x1="${x + 1}" x2="${x + CW - 1}" y1="${y}" y2="${y}" stroke="#eef0f4"/>`); }
-    for (const it of sortedItems(d).filter(i => i.room === r.id)) {
+    // rooms as sub-columns inside the day window, like the browser board
+    if (multi) d.rooms.forEach((r, ri) => {
+      const rx = x + 7 + ri * roomW;
+      o.push(`<text x="${rx + 2}" y="${P + HEAD + 41}" font-size="10.5" font-weight="650" fill="#687080">${esc(fitText(r.name || `Room ${ri + 1}`, 10.5, 650, roomW - 6))}</text>`);
+      if (ri > 0) o.push(`<line x1="${rx}" x2="${rx}" y1="${wy + 6}" y2="${wy + wh - 6}" stroke="#e2e5eb" stroke-dasharray="3 3"/>`);
+    });
+    for (const it of sortedItems(d)) {
+      const ri = d.rooms.findIndex(r => r.id === it.room), r = d.rooms[ri] || { name: '' };
       const pl = plans.get(it.id), { L, iw, side, colW, ppl, notes, tLines, inline, perRow, rows, contentH, reserve } = pl;
-      const ix = x + 7 + L.lane * ((CW - 14) / L.n), iy = top + (it.start - ax.s) * ppm + 1.5, ih = (it.end - it.start) * ppm - 3;
+      const ix = x + 7 + ri * roomW + L.lane * (roomW / L.n), iy = top + (it.start - ax.s) * ppm + 1.5, ih = (it.end - it.start) * ppm - 3;
       const brk = it.type === 'break', col = brk ? '#b6bbc4' : it.color, tcol = brk ? '#5d6472' : '#151821';
       o.push(`<rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" rx="8" fill="${brk ? '#f1f2f4' : tint(col, 0.13)}" stroke="${brk ? '#dfe2e7' : tint(col, 0.35)}"/>`);
       o.push(`<rect x="${ix + 4}" y="${iy + 4}" width="4" height="${Math.max(2, ih - 8)}" rx="2" fill="${col}"/>`);
