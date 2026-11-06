@@ -214,6 +214,7 @@ input.txt:focus,textarea:focus,.tin:focus,.din:focus,select:focus{outline:none;b
 .rtab input{border:0;background:none;color:inherit;font:inherit;font-size:12px;font-weight:600;width:100%;min-width:0;padding:0}
 .rtab input:focus{outline:none}
 .rtab .x{width:20px;height:20px;opacity:1;display:grid}
+.item.span .card{border-style:dashed}
 .item.ob .card{border-color:#e5484d;box-shadow:0 0 0 1px #e5484d}
 .item.ob.sel .card{box-shadow:0 0 0 2px var(--focus),0 0 0 3px #e5484d}
 .obw{flex:none;width:12px;height:12px;color:#e5484d;margin-top:2px}
@@ -516,7 +517,7 @@ function normalize(src) {
       const room = nd.rooms.some(r => r.id === it.room) ? String(it.room) : nd.rooms[0].id;
       nd.items.push({ id: String(it.id || uid()), title: String(it.title ?? ''), start: s, end: e,
         color: COLORS.includes(it.color) ? it.color : COLORS[0], type: it.type === 'break' ? 'break' : 'session',
-        participants: (it.participants || []).map(String).filter(x => pids.has(x)), notes: String(it.notes || ''), pinned: !!it.pinned, room });
+        participants: (it.participants || []).map(String).filter(x => pids.has(x)), notes: String(it.notes || ''), pinned: !!it.pinned, room, spanAll: !!it.spanAll });
     }
     fitDay(nd); out.days.push(nd);
   }
@@ -773,7 +774,7 @@ function shiftFrom(day, t, D, exclude, room) {
   if (stop < Infinity && moved.some(i => i.end > stop)) toast('Items now overlap a pinned item');
 }
 function newItem(start, len, room) {
-  return { id: uid(), title: 'New item', start, end: start + len, color: COLORS[itemCount() % 7], type: 'session', participants: [], notes: '', pinned: false, room };
+  return { id: uid(), title: 'New item', start, end: start + len, color: COLORS[itemCount() % 7], type: 'session', participants: [], notes: '', pinned: false, room, spanAll: false };
 }
 function addItem(day, start, len, room) {
   const it = newItem(start, len, room); day.items.push(it); fitDay(day);
@@ -914,22 +915,24 @@ function renderBoard() {
     const work = d.items.filter(x => x.type !== 'break').reduce((a, x) => a + x.end - x.start, 0);
     const lastEnd = d.items.length ? Math.max(...d.items.map(x => x.end)) : null;
     const dayOb = d.items.filter(it => cf.items.has(it.id)).length;
-    const rooms = d.rooms.map(r => {
-      const rits = roomItems(d, r.id), lay = lanes(rits);
-      const items = rits.map(it => {
-        const L = lay.get(it.id), top = (it.start - ax.s) * ppm, h = (it.end - it.start) * ppm;
-        const size = h < 26 ? 'xs' : h < 44 ? 'sm' : '';
-        const ppl = peopleOf(it), notes = String(it.notes || '').trim();
-        const ob = cf.items.get(it.id);
-        const obNames = ob ? [...ob].map(pid => { const p = person(pid); return p ? p.name : ''; }).filter(Boolean).join(', ') : '';
-        const cls = [size, it.type === 'break' ? 'brk' : '', it.pinned ? 'pinned' : '', ob ? 'ob' : '', ui.sel === it.id ? 'sel' : '', ui.hl && !it.participants.includes(ui.hl) ? 'dim' : '', ui.drag && ui.drag.moved && ui.drag.itemId === it.id ? 'dragging' + (ui.drag.unglued ? ' unglued' : '') : ''].join(' ');
-        return `<div class="item ${cls}" data-id="${it.id}" style="top:${top}px;height:${h}px;left:${L.lane / L.n * 100}%;width:${100 / L.n}%;--c:${it.color}">
-        <div class="card" title="${esc(it.title)}${ppl.length ? ' — ' + esc(names(it)) : ''}${notes ? '\n\n' + esc(notes) : ''}${ob ? '\n\nOverbooked: ' + esc(obNames) : ''}"><div class="t-time"><span>${fmt(it.start)}–${fmt(it.end)}</span><span class="d">${dur(it.end - it.start)}</span></div><div class="t-main"><div class="t-head">${ob ? `<span class="obw" title="Overbooked: ${esc(obNames)}">${ICON_WARN}</span>` : ''}<div class="t-title">${it.pinned ? `<span class="pin" title="Pinned">${ICON_PIN}</span>` : ''}${esc(it.title) || '<span class="muted">Untitled</span>'}</div>${notes ? `<span class="t-nicon" hidden>${ICON_NOTE}</span>` : ''}</div>${notes ? `<div class="t-notes">${esc(notes)}</div>` : ''}</div>${ppl.length ? `<div class="t-ppl">${ppl.map(p => avatar(p)).join('')}<span class="more" hidden></span></div>` : ''}</div>
+    const itemHtml = (it, left, width) => {
+      const top = (it.start - ax.s) * ppm, h = (it.end - it.start) * ppm;
+      const size = h < 26 ? 'xs' : h < 44 ? 'sm' : '';
+      const ppl = peopleOf(it), notes = String(it.notes || '').trim();
+      const ob = cf.items.get(it.id);
+      const obNames = ob ? [...ob].map(pid => { const p = person(pid); return p ? p.name : ''; }).filter(Boolean).join(', ') : '';
+      const cls = [size, it.type === 'break' ? 'brk' : '', it.pinned ? 'pinned' : '', it.spanAll ? 'span' : '', ob ? 'ob' : '', ui.sel === it.id ? 'sel' : '', ui.hl && !it.participants.includes(ui.hl) ? 'dim' : '', ui.drag && ui.drag.moved && ui.drag.itemId === it.id ? 'dragging' + (ui.drag.unglued ? ' unglued' : '') : ''].join(' ');
+      return `<div class="item ${cls}" data-id="${it.id}" style="top:${top}px;height:${h}px;left:${left}%;width:${width}%;--c:${it.color}">
+        <div class="card" title="${esc(it.title)}${it.spanAll ? ' (all rooms)' : ''}${ppl.length ? ' — ' + esc(names(it)) : ''}${notes ? '\n\n' + esc(notes) : ''}${ob ? '\n\nOverbooked: ' + esc(obNames) : ''}"><div class="t-time"><span>${fmt(it.start)}–${fmt(it.end)}</span><span class="d">${dur(it.end - it.start)}</span></div><div class="t-main"><div class="t-head">${ob ? `<span class="obw" title="Overbooked: ${esc(obNames)}">${ICON_WARN}</span>` : ''}<div class="t-title">${it.pinned ? `<span class="pin" title="Pinned">${ICON_PIN}</span>` : ''}${esc(it.title) || '<span class="muted">Untitled</span>'}${it.spanAll ? ' <span class="muted small">(all rooms)</span>' : ''}</div>${notes ? `<span class="t-nicon" hidden>${ICON_NOTE}</span>` : ''}</div>${notes ? `<div class="t-notes">${esc(notes)}</div>` : ''}</div>${ppl.length ? `<div class="t-ppl">${ppl.map(p => avatar(p)).join('')}<span class="more" hidden></span></div>` : ''}</div>
         <div class="h top" data-h="top" title="Drag to change start"></div><div class="h bot" data-h="bottom" title="Drag to change end"></div>
         <button class="plus ptop" data-plus="before" title="Insert item before">+</button><button class="plus pbot" data-plus="after" title="Insert item after">+</button></div>`;
-      }).join('');
+    };
+    const rooms = d.rooms.map(r => {
+      const rits = roomItems(d, r.id).filter(i => !i.spanAll), lay = lanes(rits);
+      const items = rits.map(it => { const L = lay.get(it.id); return itemHtml(it, L.lane / L.n * 100, 100 / L.n); }).join('');
       return `<div class="room" data-day="${d.id}" data-room="${r.id}"><div class="lanes">${items}</div></div>`;
     }).join('');
+    const spans = d.items.filter(it => it.spanAll).map(it => itemHtml(it, 0, 100)).join('');
     const now = d.date === today && nowM >= ax.s && nowM <= ax.e ? `<div class="now" style="top:${(nowM - ax.s) * ppm}px"></div>` : '';
     const strip = roomsMax > 1 ? `<div class="dh4">${d.rooms.map((r, ri) => `<div class="rtab" data-room="${r.id}"><input class="rin" data-k="roomname" value="${esc(r.name)}" placeholder="Room ${ri + 1}" spellcheck="false" title="Room name"><button class="x" data-act="delroom" title="Delete this room (its items move to another room)">${ICON_X}</button></div>`).join('')}</div>` : '';
     return `<section class="day" data-day="${d.id}"${roomsMax > 1 ? ' style="max-width:880px"' : ''}>
@@ -949,7 +952,7 @@ function renderBoard() {
           ${d.items.length ? '' : '<div class="empty">Click + or double-click<br>to add an agenda item</div>'}
           <div class="edge bot"><div class="grip" data-h="dayend" title="Drag to change when the day ends">${ICON_GRIP}${fmt(d.end)}</div><button class="plus" data-plus="dayend" title="Add item at end of day">+</button></div>
         </div>
-        <div class="rooms">${rooms}</div>${now}
+        <div class="rooms">${rooms}${spans}</div>${now}
       </div></section>`;
   }).join('');
   queueMicrotask(fitCards);
@@ -999,7 +1002,7 @@ function renderEditor() {
       <li><span class="k">↕</span><span><b>Drag edges</b> to resize. Touching items are glued: the shared boundary moves both.</span></li>
       <li><span class="k">✥</span><span><b>Drag the body</b> to move both edges at once; touching neighbours stretch to follow. Drag further to unglue it and drop it anywhere: other items make room. <kbd>Shift</kbd>-drag moves freely without reflowing.</span></li>
       <li><span class="k">${ICON_PIN}</span><span><b>Pin</b> an item (<kbd>P</kbd>) so other edits never move it.</span></li>
-      <li><span class="k">+</span><span><b>Rooms</b> split a day into parallel tracks (+ on the day header). Drag an item sideways to move it to another room or day. A red <b>overbooked</b> flag marks people who are in two places at once.</span></li>
+      <li><span class="k">+</span><span><b>Rooms</b> split a day into parallel tracks (+ on the day header). Drag an item sideways to move it to another room or day; <b>All rooms</b> in the editor stretches an item across every room (team dinner, Teams call). A red <b>overbooked</b> flag marks people who are in two places at once.</span></li>
       <li><span class="k">◷</span><span>Change a day's <b>start time</b> to shift the whole day. Pinned items stay put.</span></li>
       <li><span class="k">2×</span><span><b>Double-click</b> empty time to add an item there.</span></li></ul>
       <h3 style="margin-top:22px">Shortcuts</h3><div class="keys">
@@ -1025,6 +1028,7 @@ function renderEditor() {
     <div class="ed-top"><span class="pill" style="--c:${it.color}">${esc(dayLabel(day, di))}${day.rooms.length > 1 && room ? ' · ' + esc(room.name || 'Room') : ''}</span><button class="ib" data-e="close" title="Close (Esc)">${ICON_X}</button></div>
     <textarea class="ed-title grow" data-f="title" rows="1" placeholder="Title" spellcheck="false">${esc(it.title)}</textarea>
     <div class="edrow"><div class="seg"><button data-type="session" class="${it.type !== 'break' ? 'on' : ''}">Session</button><button data-type="break" class="${it.type === 'break' ? 'on' : ''}">Break</button></div>
+      ${day.rooms.length > 1 ? `<button class="btn sm ${it.spanAll ? 'on' : ''}" data-e="span" title="Stretch this item across all rooms of the day (e.g. team dinner, Teams meeting)">All rooms</button>` : ''}
       <button class="btn sm ${it.pinned ? 'on' : ''}" data-e="pin" title="Pinned items are not moved by other edits (P)">${ICON_PIN}${it.pinned ? 'Pinned' : 'Pin'}</button></div>
     <div class="lbl">Time</div>
     <div class="times"><input class="tin" data-f="start" value="${fmt(it.start)}" inputmode="numeric" title="Start (24h)"><span class="muted">–</span><input class="tin" data-f="end" data-rel="${it.start}" value="${fmt(it.end)}" inputmode="numeric" title="End (24h)"><span class="durv">${dur(it.end - it.start)}</span></div>
@@ -1334,6 +1338,7 @@ ed.addEventListener('click', e => {
   if (b.dataset.color) { it.color = b.dataset.color; commit(); }
   else if (b.dataset.type) { it.type = b.dataset.type; if (it.type === 'break' && /^new item$/i.test(it.title)) it.title = 'Break'; commit(); }
   else if (b.dataset.rm) { it.participants = it.participants.filter(x => x !== b.dataset.rm); commit(); }
+  else if (b.dataset.e === 'span') { it.spanAll = !it.spanAll; commit(); toast(it.spanAll ? 'Stretched across all rooms of the day' : 'Back to a single room'); }
   else if (b.dataset.e === 'pin') togglePin();
   else if (b.dataset.e === 'del') delItem();
   else if (b.dataset.e === 'dup') dupItem();
@@ -1472,9 +1477,9 @@ function exportModel() {
   return doc.days.map((d, i) => ({
     heading: doc.days.length > 1 || d.date ? `Day ${i + 1}${d.date ? ' – ' + dayLabel(d, i) : ''}` : '',
     rooms: d.rooms.map((r, ri) => ({
-      name: d.rooms.length > 1 ? (r.name || `Room ${ri + 1}`) : '',
+      name: r.name || (d.rooms.length > 1 ? `Room ${ri + 1}` : ''),
       items: sortedItems(d).filter(it => it.room === r.id).map(it => ({ title: it.title || 'Untitled', time: `${fmt(it.start)} - ${fmt(it.end)}`, brk: it.type === 'break',
-        people: peopleOf(it).map(p => p.name), notes: String(it.notes || '').trim(), color: it.color }))
+        people: peopleOf(it).map(p => p.name), notes: String(it.notes || '').trim(), color: it.color, span: !!it.spanAll }))
     }))
   }));
 }
@@ -1486,7 +1491,7 @@ function agendaText() {
       if (room.name) L.push(`## ${room.name}`, '');
       const h = room.name ? '###' : '##';
       for (const it of room.items) {
-        L.push(`${h} ${it.title}`, it.time, '');
+        L.push(`${h} ${it.title}${it.span ? ' (all rooms)' : ''}`, it.time, '');
         if (it.people.length) L.push('Participants:', ...it.people.map(n => `- ${n}`), '');
         if (it.notes) L.push('Notes:', ...it.notes.split(/\r?\n/).map(l => l.trimEnd()), '');
       }
@@ -1503,7 +1508,7 @@ function agendaHTML() {
       if (room.name) h += `<h2 style="font-size:16px;margin:16px 0 4px">${esc(room.name)}</h2>`;
       for (const it of room.items) {
         const tag = room.name ? 'h3' : 'h2';
-        h += `<${tag} style="font-size:15px;margin:14px 0 2px;${it.brk ? 'color:#687080' : ''}">${esc(it.title)}</${tag}><p style="margin:0 0 6px;color:#687080">${it.time}</p>`;
+        h += `<${tag} style="font-size:15px;margin:14px 0 2px;${it.brk ? 'color:#687080' : ''}">${esc(it.title)}${it.span ? ' <span style="color:#687080;font-weight:400;font-size:12.5px">(all rooms)</span>' : ''}</${tag}><p style="margin:0 0 6px;color:#687080">${it.time}</p>`;
         if (it.people.length) h += `<p style="margin:6px 0 2px"><b>Participants:</b></p><ul style="margin:0 0 6px;padding-left:20px">${it.people.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
         if (it.notes) h += `<p style="margin:6px 0 2px"><b>Notes:</b></p><p style="margin:0 0 6px;white-space:pre-wrap">${esc(it.notes)}</p>`;
       }
@@ -1574,7 +1579,7 @@ function buildSVG() {
     (d.rooms || [{ id: '', name: '' }]).forEach((r, ri) => {
     const rits = roomItems(d, r.id), lay = lanes(rits);
     for (const it of rits) {
-      const L = lay.get(it.id), iw = roomW / L.n - 4, inner = iw - 14 - PAD;
+      const L = lay.get(it.id), iw = it.spanAll ? CW - 14 : roomW / L.n - 4, inner = iw - 14 - PAD;
       const side = iw >= 210, colW = side ? inner - TW - 8 : inner;
       const ppl = peopleOf(it), notes = String(it.notes || '').trim();
       const reserve = notes ? MK : 0;
@@ -1590,7 +1595,7 @@ function buildSVG() {
       if (notes) {   // scale at which the notes fit inside the item, and the height they cost as a reference instead
         const nl = wrapText(notes, 11, 400, colW).length;
         pl.noteNeed = (PAD + (side ? 0 : 15) + contentH + 4 + nl * 14 + PAD + 3) / (it.end - it.start);
-        const head = `${anyMulti ? (r.name || `Room ${ri + 1}`) + ' · ' : ''}${all.length > 1 || d.date ? dayLabel(d, di) + ' · ' : ''}${fmt(it.start)}–${fmt(it.end)} · ${title}`;
+        const head = `${it.spanAll ? 'All rooms · ' : anyMulti ? (r.name || `Room ${ri + 1}`) + ' · ' : ''}${all.length > 1 || d.date ? dayLabel(d, di) + ' · ' : ''}${fmt(it.start)}–${fmt(it.end)} · ${title}`;
         pl.refH = 6 + wrapText(head, 12.5, 650, refW).length * 17 + 2 + wrapText(notes, 12, 400, refW).length * 17 + 10;
       }
       plans.set(it.id, pl);
@@ -1639,16 +1644,17 @@ function buildSVG() {
     const wy = top + (d.start - ax.s) * ppm, wh = (d.end - d.start) * ppm;
     o.push(`<rect x="${x}" y="${wy}" width="${CW}" height="${wh}" rx="12" fill="#fafbfc" stroke="#e2e5eb"/>`);
     for (let m = Math.ceil(d.start / 60) * 60; m < d.end; m += 60) { if (m === d.start) continue; const y = top + (m - ax.s) * ppm; o.push(`<line x1="${x + 1}" x2="${x + CW - 1}" y1="${y}" y2="${y}" stroke="#eef0f4"/>`); }
-    // rooms as sub-columns inside the day window, like the browser board
-    if (multi) d.rooms.forEach((r, ri) => {
+    // rooms as sub-columns inside the day window, like the browser board; named rooms are always labeled
+    d.rooms.forEach((r, ri) => {
       const rx = x + 7 + ri * roomW;
-      o.push(`<text x="${rx + 2}" y="${P + HEAD + 41}" font-size="10.5" font-weight="650" fill="#687080">${esc(fitText(r.name || `Room ${ri + 1}`, 10.5, 650, roomW - 6))}</text>`);
-      if (ri > 0) o.push(`<line x1="${rx}" x2="${rx}" y1="${wy + 6}" y2="${wy + wh - 6}" stroke="#e2e5eb" stroke-dasharray="3 3"/>`);
+      const nm = r.name || (multi ? `Room ${ri + 1}` : '');
+      if (nm) o.push(`<text x="${rx + 2}" y="${P + HEAD + 41}" font-size="10.5" font-weight="650" fill="#687080">${esc(fitText(nm, 10.5, 650, roomW - 6))}</text>`);
+      if (multi && ri > 0) o.push(`<line x1="${rx}" x2="${rx}" y1="${wy + 6}" y2="${wy + wh - 6}" stroke="#e2e5eb" stroke-dasharray="3 3"/>`);
     });
     for (const it of sortedItems(d)) {
       const ri = d.rooms.findIndex(r => r.id === it.room), r = d.rooms[ri] || { name: '' };
       const pl = plans.get(it.id), { L, iw, side, colW, ppl, notes, tLines, inline, perRow, rows, contentH, reserve } = pl;
-      const ix = x + 7 + ri * roomW + L.lane * (roomW / L.n), iy = top + (it.start - ax.s) * ppm + 1.5, ih = (it.end - it.start) * ppm - 3;
+      const ix = it.spanAll ? x + 7 : x + 7 + ri * roomW + L.lane * (roomW / L.n), iy = top + (it.start - ax.s) * ppm + 1.5, ih = (it.end - it.start) * ppm - 3;
       const brk = it.type === 'break', col = brk ? '#b6bbc4' : it.color, tcol = brk ? '#5d6472' : '#151821';
       o.push(`<rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" rx="8" fill="${brk ? '#f1f2f4' : tint(col, 0.13)}" stroke="${brk ? '#dfe2e7' : tint(col, 0.35)}"/>`);
       o.push(`<rect x="${ix + 4}" y="${iy + 4}" width="4" height="${Math.max(2, ih - 8)}" rx="2" fill="${col}"/>`);
@@ -1675,7 +1681,7 @@ function buildSVG() {
         if (nLines.length * 14 <= room) nLines.forEach((l, k) => o.push(`<text x="${cx}" y="${ny + 11 + k * 14}" font-size="11" fill="#6b7280" font-style="italic">${esc(l)}</text>`));
         else {
           const num = refs.length + 1;
-          refs.push({ num, head: `${anyMulti ? (r.name || `Room ${ri + 1}`) + ' · ' : ''}${all.length > 1 || d.date ? dayLabel(d, di) + ' · ' : ''}${fmt(it.start)}–${fmt(it.end)} · ${it.title || 'Untitled'}`, notes });
+          refs.push({ num, head: `${it.spanAll ? 'All rooms · ' : anyMulti ? (r.name || `Room ${ri + 1}`) + ' · ' : ''}${all.length > 1 || d.date ? dayLabel(d, di) + ' · ' : ''}${fmt(it.start)}–${fmt(it.end)} · ${it.title || 'Untitled'}`, notes });
           const last = tLines.length - 1, mx = cx + tw(tLines[last], 13, 650) + 6 + 8, my = cy + 8 + last * 17;
           o.push(`<circle cx="${mx}" cy="${my}" r="8" fill="#151821"/><text x="${mx}" y="${my + 3.6}" font-size="10" font-weight="700" fill="#ffffff" text-anchor="middle">${num}</text>`);
         }
