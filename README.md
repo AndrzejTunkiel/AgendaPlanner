@@ -79,3 +79,7 @@ Times are minutes after midnight (`540` = 09:00). `spanAll: true` stretches an i
 ## Privacy
 
 The app runs entirely in your browser: no accounts, no analytics, no network calls. Agendas live in the JSON files you save; drafts and name suggestions in `localStorage`.
+
+## License
+
+[MIT](LICENSE) — use it, modify it, share it freely; just keep the copyright notice.
