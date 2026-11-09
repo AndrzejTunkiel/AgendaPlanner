@@ -10,13 +10,13 @@ A visual planner for multi-day agendas with **parallel rooms** — built as a **
 2. Plan your agenda on the board: add days, items, participants.
 3. Press **Ctrl+S** to save. The agenda is stored as **one `.agenda.json` file** — in Edge/Chrome it saves straight to a file and folder you pick; other browsers download a copy. Re-open any agenda with **Ctrl+O** or by dropping the JSON file onto the window.
 
-Everything else — the unsaved draft, known participant names, theme and zoom — lives in your browser's `localStorage`. Nothing is ever sent anywhere.
+Everything else — the unsaved draft, known participant names, theme and zoom — lives in your browser's `localStorage`. Your agenda data is never sent anywhere.
 
 ## The whole app is one file, the agenda is one file
 
 | What | File | Notes |
 |---|---|---|
-| The application | `Agendaplanner.html` | HTML + CSS + JS, zero dependencies, ~120 KB |
+| The application | `Agendaplanner.html` | HTML + CSS + JS, zero dependencies, ~140 KB |
 | Each agenda | `*.agenda.json` | Human-readable JSON, easy to diff, version-control or generate |
 
 Because an agenda is a single JSON document, you can keep agendas in git, generate them from scripts, or share them as one attachment.
@@ -30,7 +30,7 @@ Because an agenda is a single JSON document, you can keep agendas in git, genera
 - **Participants** — badges on every item, per-person totals, name suggestions learned from your previous agendas.
 - **Direct manipulation** — drag item edges to resize (touching items stay glued), drag the body to move, drag further to unglue and reorder, double-click empty time to insert, pin items so edits never move them.
 - **Breaks, colors, notes** — session/break types, per-item colors, notes shown on the board and in exports.
-- **Sensitive items** — tick *Sensitive* in the item editor to mark an item. The *Hide sensitive* toggle in the sidebar then hides all sensitive items on the board and in every export (Markdown, formatted HTML, table, PNG image, print).
+- **Sensitive items** — tick *Sensitive* in the item editor to mark an item. The *Hide sensitive* toggle in the sidebar then hides all sensitive items, and people who appear only on them, on the board and in every export (Markdown, formatted HTML, table, PNG image, print). The saved `.agenda.json` still contains them.
 - **Exports** — preview, then copy or download as **Markdown**, **formatted HTML** (paste into Outlook/Teams/Word), a **table** (one per day; pastes as real cells into Excel/Word/Outlook, with a Room column on multi-room days), or a **PNG image** of the whole agenda (rooms shown as sub-columns, like the board). Print/PDF works too.
 - **Undo/redo** (Ctrl+Z / Ctrl+Y), zoom and snap-step controls, 9 color themes (auto dark/light + Solarized, Nord, Gruvbox, Dracula).
 - **Self-update** — once a day (or via the ↻ toolbar button) the app checks GitHub for a newer release. If one exists you get a prompt to download the new single-file app (you pick the folder/file to save to), then a **Reload** button to switch to it. Works offline: the check is simply skipped when there's no network.
@@ -80,7 +80,7 @@ Times are minutes after midnight (`540` = 09:00). `spanAll: true` stretches an i
 
 ## Privacy
 
-The app runs entirely in your browser: no accounts, no analytics, no network calls. Agendas live in the JSON files you save; drafts and name suggestions in `localStorage`.
+The app runs entirely in your browser: no accounts, no analytics. The only network calls are the update check and download, which go to GitHub and carry none of your data. Agendas live in the JSON files you save; drafts and name suggestions in `localStorage`.
 
 ## License
 
