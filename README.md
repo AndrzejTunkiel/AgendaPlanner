@@ -32,6 +32,7 @@ Because an agenda is a single JSON document, you can keep agendas in git, genera
 - **Breaks, colors, notes** — session/break types, per-item colors, notes shown on the board and in exports.
 - **Exports** — preview, then copy or download as **Markdown**, **formatted HTML** (paste into Outlook/Teams/Word), a **table** (one per day; pastes as real cells into Excel/Word/Outlook, with a Room column on multi-room days), or a **PNG image** of the whole agenda (rooms shown as sub-columns, like the board). Print/PDF works too.
 - **Undo/redo** (Ctrl+Z / Ctrl+Y), zoom and snap-step controls, 9 color themes (auto dark/light + Solarized, Nord, Gruvbox, Dracula).
+- **Self-update** — once a day (or via the ↻ toolbar button) the app checks GitHub for a newer release. If one exists you get a prompt to download the new single-file app (you pick the folder/file to save to), then a **Reload** button to switch to it. Works offline: the check is simply skipped when there's no network.
 
 ![Multi-room day in the image export](screenshots/export-multi-room.svg)
 
