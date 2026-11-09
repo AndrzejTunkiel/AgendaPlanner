@@ -126,7 +126,9 @@ body.no-editor #editor{display:none}
 .tools{display:flex;gap:4px;align-items:center}
 .tools .sep{width:1px;height:20px;background:var(--line);margin:0 3px}
 .tools .sp{flex:1}
-.opts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.opts{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.opts .sel{width:100%;flex:none}
+.opts .chk{align-self:flex-start}
 .panel{padding:14px 14px 8px}
 .panel h3{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px;font-weight:650;display:flex;justify-content:space-between;align-items:center}
 .field{position:relative}
@@ -1518,10 +1520,10 @@ async function fetchLatest() {
   } finally { clearTimeout(t); }
 }
 async function checkForUpdates(manual) {
-  LS.set('agenda.lastUpdateCheck', Date.now());
   let latest;
   try { latest = await fetchLatest(); }
   catch (err) { if (manual) toast('Could not check for updates (' + err.message + ')'); return; }
+  LS.set('agenda.lastUpdateCheck', Date.now());
   if (!latest) { if (manual) toast('No version found on GitHub yet'); return; }
   if (cmpVer(latest.tag, APP_VERSION) > 0) promptUpdate(latest);
   else if (manual) toast(`Up to date — you're on v${APP_VERSION}`);
