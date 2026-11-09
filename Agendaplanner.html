@@ -473,7 +473,7 @@ const ICON_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 const ICON_CAL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>';
 const ICON_WARN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v4M12 17.5h.01"/></svg>';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.1.2';
 const GH_REPO = 'AndrzejTunkiel/AgendaPlanner';
 
 /* ---------- dialogs (work even where browser prompts are blocked) ---------- */
@@ -486,7 +486,7 @@ function ask(msg, okLabel = 'OK', danger = false, input = null) {
     const done = v => { m.remove(); document.removeEventListener('keydown', kd, true); res(v && inp ? inp.value.trim() || null : v); };
     const kd = e => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
-      else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(true); }
+      else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(!e.target.closest('[data-n]')); }
     };
     document.addEventListener('keydown', kd, true);
     m.addEventListener('click', e => { if (e.target.closest('[data-y]')) done(true); else if (e.target.closest('[data-n]') || e.target === m) done(false); });
@@ -515,23 +515,30 @@ function normalize(src) {
   if (!src || !Array.isArray(src.days)) throw new Error('Not an agenda');
   const out = { app: 'agenda-planner', version: 1, title: String(src.title || 'Untitled agenda'),
     snap: [5, 10, 15].includes(+src.snap) ? +src.snap : 5, participants: [], days: [] };
-  const pids = new Set();
+  /* Ids end up in HTML attributes and selectors, so files may only keep safe, unique ones. */
+  const safeId = (v, seen) => { let id = String(v ?? '').replace(/[^\w-]/g, ''); if (!id || seen.has(id)) id = uid(); seen.add(id); return id; };
+  const remember = (map, raw, id) => { if (raw != null && !map.has(String(raw))) map.set(String(raw), id); };
+  const time = v => Math.round(clamp(v, 0, MAX));
+  const pmap = new Map(), pseen = new Set(), dseen = new Set(), iseen = new Set();
   for (const p of src.participants || []) {
     if (!p || !p.name) continue;
-    const id = String(p.id || uid()); pids.add(id);
+    const id = safeId(p.id, pseen); remember(pmap, p.id, id);
     out.participants.push(mkPerson(id, String(p.name), p.initials, p.color));
   }
   const num = (v, d) => Number.isFinite(+v) && v !== null && v !== '' ? +v : d;
   for (const day of src.days) {
-    const nd = { id: String(day.id || uid()), date: parseD(day.date) || '', start: num(day.start, 540), end: num(day.end, 1020),
-      rooms: (Array.isArray(day.rooms) && day.rooms.length ? day.rooms : [{}]).map(r => ({ id: String(r && r.id || uid()), name: String((r && r.name) ?? '') })), items: [] };
+    const rmap = new Map(), rseen = new Set();
+    const nd = { id: safeId(day.id, dseen), date: parseD(day.date) || '', start: time(num(day.start, 540)), end: time(num(day.end, 1020)),
+      rooms: (Array.isArray(day.rooms) && day.rooms.length ? day.rooms : [{}]).map(r => { const id = safeId(r && r.id, rseen); remember(rmap, r && r.id, id); return { id, name: String((r && r.name) ?? '') }; }), items: [] };
     for (const it of day.items || []) {
-      const s = num(it.start, NaN), e = num(it.end, NaN);
-      if (!(e > s)) continue;
-      const room = nd.rooms.some(r => r.id === it.room) ? String(it.room) : nd.rooms[0].id;
-      nd.items.push({ id: String(it.id || uid()), title: String(it.title ?? ''), start: s, end: e,
+      const rs = num(it.start, NaN), re = num(it.end, NaN);
+      if (!(re > rs)) continue;
+      // keep items that overrun the day limit: pull them back inside, preserving their length
+      const len = clamp(Math.round(re - rs), 5, MAX), s = Math.min(time(rs), MAX - len), e = s + len;
+      const room = rmap.get(String(it.room)) || nd.rooms[0].id;
+      nd.items.push({ id: safeId(it.id, iseen), title: String(it.title ?? ''), start: s, end: e,
         color: COLORS.includes(it.color) ? it.color : COLORS[0], type: it.type === 'break' ? 'break' : 'session',
-        participants: (it.participants || []).map(String).filter(x => pids.has(x)), notes: String(it.notes || ''), pinned: !!it.pinned, room, spanAll: !!it.spanAll, sensitive: !!it.sensitive });
+        participants: [...new Set((it.participants || []).map(x => pmap.get(String(x))).filter(Boolean))], notes: String(it.notes || ''), pinned: !!it.pinned, room, spanAll: !!it.spanAll, sensitive: !!it.sensitive });
     }
     fitDay(nd); out.days.push(nd);
   }
@@ -567,7 +574,10 @@ function commit(full = true) {
 }
 function undo() { if (hi > 0) { hi--; doc = JSON.parse(hist[hi]); afterHist(); } }
 function redo() { if (hi < hist.length - 1) { hi++; doc = JSON.parse(hist[hi]); afterHist(); } }
-function afterHist() { if (ui.sel && !findItem(ui.sel)) ui.sel = null; saveDraft(); renderAll(); }
+function afterHist() {
+  if (ui.sel && !findItem(ui.sel)) ui.sel = null;
+  saveDraft(); renderAll();
+}
 function saveDraft() { LS.set('agenda.draft', { doc, fileName: ui.fileName, savedJson: ui.savedJson }); }
 
 /* ---------- people ---------- */
@@ -608,7 +618,7 @@ function knownList(q) {
 }
 function itemCands(it, q) {
   const out = [], inItem = new Set(it.participants);
-  for (const p of doc.participants) {
+  for (const p of visiblePeople()) {
     if (inItem.has(p.id)) continue;
     const r = Math.max(rank(p.name, q), q && initialsOf(p).toLowerCase().startsWith(q.toLowerCase()) ? 2 : 0);
     if (r) out.push({ label: p.name, tag: 'in agenda', r: r + 10, value: { pid: p.id }, p });
@@ -617,7 +627,7 @@ function itemCands(it, q) {
   return out.sort((a, b) => b.r - a.r || cmpName(a.label, b.label)).slice(0, 8);
 }
 const knownCands = q => knownList(q).sort((a, b) => b.r - a.r || cmpName(a.label, b.label)).slice(0, 8);
-function attachAC(input, getC, onPick) {
+function attachAC(input, getC, onPick, preferTyped = false) {
   if (!input) return;
   const box = document.createElement('div'); box.className = 'ac'; box.hidden = true; input.parentNode.appendChild(box);
   let list = [], hiI = 0;
@@ -628,9 +638,9 @@ function attachAC(input, getC, onPick) {
   const refresh = () => {
     const q = input.value.trim(); list = getC(q);
     if (q && !list.some(c => c.label.toLowerCase() === q.toLowerCase())) list.push({ label: `Add “${q}”`, create: true, value: { name: q } });
-    hiI = 0; draw();
+    hiI = preferTyped ? Math.max(0, list.findIndex(c => c.create || c.label.toLowerCase() === q.toLowerCase())) : 0; draw();
   };
-  const pick = i => { const c = list[i]; if (!c) return; input.value = ''; onPick(c.value); };
+  const pick = i => { const c = list[i]; if (!c) return; const typed = input.value; input.value = ''; if (onPick(c.value) === false) input.value = typed; };
   input.addEventListener('focus', refresh);
   input.addEventListener('input', refresh);
   input.addEventListener('blur', () => setTimeout(() => { box.hidden = true; }, 120));
@@ -670,12 +680,19 @@ const roomItems = (day, rid) => day.items.filter(i => i.room === rid);
 /* Items shown on the board and in exports: sensitive ones are dropped while the hide toggle is on. */
 const visibleItems = d => ui.hideSensitive ? d.items.filter(i => !i.sensitive) : d.items;
 const sortedVisible = d => [...visibleItems(d)].sort((a, b) => a.start - b.start || a.end - b.end);
+/* While hiding, people who are only on sensitive items are hidden too (their names would give those items away). */
+function visiblePeople() {
+  if (!ui.hideSensitive) return doc.participants;
+  const shown = new Set(), hidden = new Set();
+  for (const d of doc.days) for (const it of d.items) for (const id of it.participants) (it.sensitive ? hidden : shown).add(id);
+  return doc.participants.filter(p => shown.has(p.id) || !hidden.has(p.id));
+}
 const itemCount = () => doc.days.reduce((n, d) => n + d.items.length, 0);
 /* Overbooked = one person on two items of the same day whose times overlap (across rooms). */
 function conflicts() {
   const items = new Map(), ppl = new Map();
   for (const d of doc.days) {
-    const its = sortedItems(d);
+    const its = sortedVisible(d);
     for (let i = 0; i < its.length; i++) for (let j = i + 1; j < its.length; j++) {
       const a = its[i], b = its[j];
       if (b.start >= a.end) break;
@@ -790,6 +807,11 @@ function shiftFrom(day, t, D, exclude, room) {
   for (const i of R) if (i !== exclude && !i.pinned && i.start >= t && i.start < stop) { i.start += D; i.end += D; moved.push(i); }
   if (stop < Infinity && moved.some(i => i.end > stop)) toast('Items now overlap a pinned item');
 }
+/* Would shiftFrom() push anything past the end of the day? Same pinned-anchor limit as shiftFrom. */
+function fitsShift(day, room, t, D, exclude) {
+  const R = roomItems(day, room), stop = Math.min(Infinity, ...R.filter(i => i.pinned && i !== exclude && i.start >= t).map(i => i.start));
+  return !R.some(i => i !== exclude && !i.pinned && i.start >= t && i.start < stop && i.end + D > MAX);
+}
 function newItem(start, len, room) {
   return { id: uid(), title: 'New item', start, end: start + len, color: COLORS[itemCount() % 7], type: 'session', participants: [], notes: '', pinned: false, room, spanAll: false, sensitive: false };
 }
@@ -807,6 +829,7 @@ function insertAt(day, t, mode, room) {
   const next = Math.min(day.end, ...R.filter(i => i.start >= t).map(i => i.start));
   const free = next - t;
   if (free >= 15) return addItem(day, t, Math.min(D, free), room);
+  if (t + D > MAX || !fitsShift(day, room, t, D)) return toast('No room left before midnight');
   shiftFrom(day, t, D, null, room);
   addItem(day, t, D, room);
 }
@@ -822,6 +845,7 @@ function dupItem() {
   const f = findItem(ui.sel); if (!f) return;
   const { day, it } = f, len = it.end - it.start, t = it.end;
   const next = Math.min(day.end, ...roomItems(day, it.room).filter(i => i !== it && i.start >= t).map(i => i.start));
+  if (t + len > MAX || (next - t < len && !fitsShift(day, it.room, t, len, it))) return toast('No room left before midnight');
   if (next - t < len) shiftFrom(day, t, len, it, it.room);
   const c = { ...clone(it), id: uid(), start: t, end: t + len, pinned: false };
   day.items.push(c); fitDay(day); ui.sel = c.id; commit();
@@ -868,7 +892,17 @@ function keepFocus(fn) {
   fn();
   if (f) { const n = document.querySelector(`[data-f="${f}"]`); if (n && n !== a) { n.focus(); try { if (s != null) n.setSelectionRange(s, e); } catch {} } }
 }
-function renderAll() { keepFocus(() => { renderTop(); renderSide(); renderBoard(); renderEditor(); }); }
+function renderAll() {
+  // a hidden item must not stay readable in the editor
+  if (ui.hideSensitive && ui.sel) { const f = findItem(ui.sel); if (f && f.it.sensitive) ui.sel = null; }
+  // nor may a person who left the sidebar (undo, or hidden) stay highlighted or open for editing
+  if (ui.hl || ui.editPid) {
+    const shown = new Set(visiblePeople().map(p => p.id));
+    if (ui.hl && !shown.has(ui.hl)) ui.hl = null;
+    if (ui.editPid && !shown.has(ui.editPid)) endPersonEdit();
+  }
+  keepFocus(() => { renderTop(); renderSide(); renderBoard(); renderEditor(); });
+}
 
 function renderTop() {
   const t = $('#docTitle'); if (document.activeElement !== t) { t.value = doc.title; grow(t); }
@@ -887,11 +921,11 @@ function renderTop() {
 
 function renderSide() {
   const stats = new Map();
-  for (const d of doc.days) for (const it of d.items) for (const id of it.participants) {
+  for (const d of doc.days) for (const it of visibleItems(d)) for (const id of it.participants) {
     const s = stats.get(id) || { n: 0, m: 0 }; s.n++; s.m += it.end - it.start; stats.set(id, s);
   }
   const cf = conflicts();
-  const ppl = [...doc.participants].sort(byName), unassigned = ppl.filter(p => !stats.has(p.id)).length;
+  const ppl = [...visiblePeople()].sort(byName), unassigned = ppl.filter(p => !stats.has(p.id)).length;
   const known = LS.get('agenda.people', []);
   const row = p => {
     if (ui.editPid === p.id) return `<div class="person editing" data-epid="${p.id}">
@@ -912,13 +946,10 @@ function renderSide() {
     <p class="small muted">Names you've used before are suggested when you add people to an item. Pull in names from existing agenda files too:</p>
     <button class="btn sm" data-side="learn">Learn from agenda folder…</button></div>`;
   const add = $('[data-f=sideAdd]');
-  add.addEventListener('keydown', e => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const name = add.value.trim(); if (!name) return;
-    if (doc.participants.some(x => x.name.toLowerCase() === name.toLowerCase())) { toast(`${name} is already in this agenda`); return; }
-    add.value = ''; const k = LS.get('agenda.people', []).find(x => x.name.toLowerCase() === name.toLowerCase()) || {}; getOrCreatePerson(name, k.initials, k.color); commit();
-  });
+  attachAC(add, q => q ? knownCands(q) : [], v => {
+    if (doc.participants.some(x => x.name.toLowerCase() === v.name.toLowerCase())) { toast(`${v.name} is already in this agenda`); return false; }
+    getOrCreatePerson(v.name, v.initials, v.color); commit();
+  }, true);
   if (ui.focusPname) { ui.focusPname = false; const n = $('[data-f=pname]'); if (n) { n.focus(); n.select(); } }
 }
 
@@ -1043,7 +1074,7 @@ function renderEditor() {
   const cf = conflicts(), ob = cf.items.get(it.id);
   const obNames = ob ? [...ob].map(pid => { const p = person(pid); return p ? p.name : ''; }).filter(Boolean).join(', ') : '';
   const chips = peopleOf(it).map(p => `<span class="chip">${avatar(p, 's0')}${esc(p.name)}<button data-rm="${p.id}" title="Remove">✕</button></span>`).join('');
-  const missing = doc.participants.filter(p => !it.participants.includes(p.id)).length;
+  const missing = visiblePeople().filter(p => !it.participants.includes(p.id)).length;
   el.innerHTML = `<div class="panel ed">
     <div class="ed-top"><span class="pill" style="--c:${it.color}">${esc(dayLabel(day, di))}${day.rooms.length > 1 && room ? ' · ' + esc(room.name || 'Room') : ''}</span><button class="ib" data-e="close" title="Close (Esc)">${ICON_X}</button></div>
     <textarea class="ed-title grow" data-f="title" rows="1" placeholder="Title" spellcheck="false">${esc(it.title)}</textarea>
@@ -1087,7 +1118,7 @@ document.addEventListener('keydown', e => {
     const S = doc.snap, n = e.key === 'ArrowUp' ? Math.floor(v / S) * S + S : Math.ceil(v / S) * S - S;
     el.value = fmt(clamp(n, 0, MAX)); el.dispatchEvent(new Event('change', { bubbles: true }));
     const cur = document.activeElement; if (cur && cur.classList.contains('tin')) openTP(cur);
-  } else if (e.key === 'Enter') { e.preventDefault(); closeTP(); el.dispatchEvent(new Event('change', { bubbles: true })); el.select(); }
+  } else if (e.key === 'Enter') { e.preventDefault(); closeTP(); tp.quiet = Date.now() + 400; el.dispatchEvent(new Event('change', { bubbles: true })); el.select(); }
   else if (e.key === 'Escape') { if (!tp.box.hidden) { e.preventDefault(); e.stopPropagation(); closeTP(); } }
   else if (e.key === 'Tab') closeTP();
 }, true);
@@ -1168,7 +1199,12 @@ function applyDrag(d, delta, target, free = false) {
       const { minD, maxD } = glueLimits(day, it, lo);
       const over = delta < minD ? minD - delta : delta > maxD ? delta - maxD : 0;
       d.unglued = over * ui.ppm >= 28;               // dragged well past where the glue stops it
-      if (d.unglued) reorderTo(day, it, delta, lo); else moveGlued(day, it, delta, lo);
+      if (!d.unglued) { moveGlued(day, it, delta, lo); return; }
+      reorderTo(day, it, delta, lo);
+      if (day.items.some(i => i.end > MAX)) {        // a drop that would push items past midnight doesn't reorder
+        doc = clone(d.orig); d.unglued = false;
+        const od = getDay(d.dayId); moveGlued(od, od.items.find(i => i.id === d.itemId), delta, lo);
+      }
       return;
     }
     d.unglued = false;
@@ -1364,7 +1400,7 @@ ed.addEventListener('click', e => {
   else if (b.dataset.e === 'pin') togglePin();
   else if (b.dataset.e === 'del') delItem();
   else if (b.dataset.e === 'dup') dupItem();
-  else if (b.dataset.e === 'all') { for (const p of doc.participants) if (!it.participants.includes(p.id)) it.participants.push(p.id); commit(); }
+  else if (b.dataset.e === 'all') { for (const p of visiblePeople()) if (!it.participants.includes(p.id)) it.participants.push(p.id); commit(); }
 });
 
 /* ---------- auto-growing single-line titles ---------- */
@@ -1508,8 +1544,7 @@ async function fetchLatest() {
     let res = await fetch(`https://api.github.com/repos/${GH_REPO}/releases/latest`, { headers: h, signal: ctrl.signal });
     if (res.ok) {
       const j = await res.json();
-      const asset = (j.assets || []).find(a => /\.html?$/i.test(a.name));
-      return { tag: j.tag_name, url: asset ? asset.browser_download_url : rawUrl(j.tag_name) };
+      return { tag: j.tag_name, url: rawUrl(j.tag_name) };   // release asset URLs can't be fetched from a page (no CORS)
     }
     if (res.status === 404) {
       res = await fetch(`https://api.github.com/repos/${GH_REPO}/tags`, { headers: h, signal: ctrl.signal });
@@ -1628,7 +1663,7 @@ function tableCells(d) {
 function agendaTableHTML() {
   const f = `font-family:${FONT};color:#151821`;
   const th = ' style="border:1px solid #d5d9e0;background:#f4f6f9;padding:6px 10px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#687080;white-space:nowrap"';
-  const td = ' style="border:1px solid #e2e5eb;padding:6px 10px;text-align:left;vertical-align:top;font-size:13px"';
+  const td = (extra = '') => ` style="border:1px solid #e2e5eb;padding:6px 10px;text-align:left;vertical-align:top;font-size:13px;${extra}"`;
   let h = `<div style="${f}"><h1 style="font-size:22px;margin:0 0 12px">${esc(doc.title)}</h1>`;
   doc.days.forEach((d, i) => {
     const label = exportDayLabel(d, i);
@@ -1636,13 +1671,13 @@ function agendaTableHTML() {
     const cells = tableCells(d), multi = d.rooms.length > 1 || visibleItems(d).some(it => it.spanAll);
     const heads = ['Time', ...(multi ? ['Room'] : []), 'Session', 'Participants', 'Notes'];
     h += `<table style="border-collapse:collapse;width:100%"><thead><tr>${heads.map(c => `<th${th}>${c}</th>`).join('')}</tr></thead><tbody>`;
-    if (!visibleItems(d).length) h += `<tr><td${td} colspan="${heads.length}" style="color:#9aa1ad">No items scheduled</td></tr>`;
+    if (!visibleItems(d).length) h += `<tr><td${td('color:#9aa1ad')} colspan="${heads.length}">No items scheduled</td></tr>`;
     for (const it of sortedVisible(d)) {
       const c = cells(it), brk = it.type === 'break';
-      h += `<tr><td${td} style="white-space:nowrap;color:#687080;font-variant-numeric:tabular-nums">${esc(c[0])}</td>`;
-      if (multi) h += `<td${td}>${esc(c[1])}</td>`;
+      h += `<tr><td${td('white-space:nowrap;color:#687080;font-variant-numeric:tabular-nums')}>${esc(c[0])}</td>`;
+      if (multi) h += `<td${td()}>${esc(c[1])}</td>`;
       const t = multi ? c[2] : c[1], ppl = multi ? c[3] : c[2], notes = multi ? c[4] : c[3];
-      h += `<td${td}><b${brk ? ' style="color:#687080;font-weight:600"' : ''}>${esc(t)}</b></td><td${td}>${esc(ppl)}</td><td${td} style="white-space:pre-wrap">${esc(notes)}</td></tr>`;
+      h += `<td${td()}><b${brk ? ' style="color:#687080;font-weight:600"' : ''}>${esc(t)}</b></td><td${td()}>${esc(ppl)}</td><td${td('white-space:pre-wrap')}>${esc(notes)}</td></tr>`;
     }
     h += '</tbody></table>';
   });
@@ -1700,7 +1735,7 @@ function tint(hex, a) { const n = parseInt(hex.slice(1), 16), m = c => Math.roun
    the time scale grows so short items still fit their content; notes that don't fit become numbered references below. */
 function buildSVG() {
   const P = 14, AX = 50, CW = 400, G = 18, TW = 70, B = 18, BS = 22, PAD = 6, MK = 22;
-  const all = doc.days, ax = { s: Math.floor(Math.min(...all.map(d => d.start)) / 60) * 60, e: Math.min(1440, Math.ceil(Math.max(...all.map(d => d.end)) / 60) * 60) }, people = [...doc.participants].sort(byName);
+  const all = doc.days, ax = { s: Math.floor(Math.min(...all.map(d => d.start)) / 60) * 60, e: Math.min(1440, Math.ceil(Math.max(...all.map(d => d.end)) / 60) * 60) }, people = [...visiblePeople()].sort(byName);
   const n = all.length, anyMulti = all.some(d => d.rooms.length > 1);
   const roomWOf = d => (CW - 14) / ((d.rooms && d.rooms.length) || 1);
   // centre initials on their actual glyph box (not the font's em box) so they sit in the middle of the circle
@@ -1933,9 +1968,15 @@ async function showXTab(tab) {
   } else {
     body.innerHTML = '<div class="xpaper ximg"><span class="muted small">Rendering…</span></div>';
     if (!xp.blob) {
-      const { W, H } = buildSVG(); xp.size = `${W * 2} × ${H * 2} px`; xp.w = W;
-      xp.blob = await pngBlob(); if (!xp) return;
-      xp.url = URL.createObjectURL(xp.blob);
+      try {
+        const { W, H } = buildSVG(); xp.size = `${W * 2} × ${H * 2} px`; xp.w = W;
+        const blob = await pngBlob(); if (!xp) return;
+        if (!blob) throw new Error('Image too large');
+        xp.blob = blob; xp.url = URL.createObjectURL(blob);
+      } catch (err) {
+        if (xp && xp.tab === 'img') body.innerHTML = `<div class="xpaper ximg"><span class="muted small">Could not render the image (${esc(err.message || 'unknown error')}).</span></div>`;
+        return;
+      }
     }
     if (xp.tab !== 'img') return;
     body.innerHTML = `<div class="xpaper ximg"><img src="${xp.url}" style="width:${xp.w}px" alt="Agenda as an image"></div>`;
@@ -1972,7 +2013,11 @@ function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.ad
 
 const draft = LS.get('agenda.draft', null);
 try {
-  if (draft && draft.doc) { doc = normalize(draft.doc); ui.fileName = draft.fileName || null; ui.savedJson = draft.savedJson || JSON.stringify(doc); }
+  if (draft && draft.doc) {
+    doc = normalize(draft.doc); ui.fileName = draft.fileName || null;
+    // a draft that matched its file is still clean even if normalize() tidied it
+    ui.savedJson = !draft.savedJson || JSON.stringify(draft.doc) === draft.savedJson ? JSON.stringify(doc) : draft.savedJson;
+  }
   else throw 0;
 } catch { doc = normalize(sampleDoc()); ui.savedJson = JSON.stringify(doc); }
 // keep the sample agenda's names out of the suggestions
@@ -1984,7 +2029,7 @@ if (!LS.get('agenda.samplePurged', false)) {
 learnPeople(doc.participants.filter(p => !SAMPLE_NAMES.includes(p.name)));
 resetHistory(); renderAll();
 if (draft && draft.doc && draft.fileName && isDirty()) toast(`Restored unsaved changes to ${draft.fileName}`);
-setInterval(() => { if (!ui.drag) renderBoard(); }, 60000);
+setInterval(() => { if (!ui.drag && !board.contains(document.activeElement)) renderBoard(); }, 60000);   // moves the "now" line; never while a board field is being edited
 if (Date.now() - LS.get('agenda.lastUpdateCheck', 0) > 86400000) setTimeout(() => checkForUpdates(false), 1500);
 window.__agenda = { get doc() { return doc; }, ui };
 })();
