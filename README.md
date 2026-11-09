@@ -30,6 +30,7 @@ Because an agenda is a single JSON document, you can keep agendas in git, genera
 - **Participants** — badges on every item, per-person totals, name suggestions learned from your previous agendas.
 - **Direct manipulation** — drag item edges to resize (touching items stay glued), drag the body to move, drag further to unglue and reorder, double-click empty time to insert, pin items so edits never move them.
 - **Breaks, colors, notes** — session/break types, per-item colors, notes shown on the board and in exports.
+- **Sensitive items** — tick *Sensitive* in the item editor to mark an item. The *Hide sensitive* toggle in the sidebar then hides all sensitive items on the board and in every export (Markdown, formatted HTML, table, PNG image, print).
 - **Exports** — preview, then copy or download as **Markdown**, **formatted HTML** (paste into Outlook/Teams/Word), a **table** (one per day; pastes as real cells into Excel/Word/Outlook, with a Room column on multi-room days), or a **PNG image** of the whole agenda (rooms shown as sub-columns, like the board). Print/PDF works too.
 - **Undo/redo** (Ctrl+Z / Ctrl+Y), zoom and snap-step controls, 9 color themes (auto dark/light + Solarized, Nord, Gruvbox, Dracula).
 - **Self-update** — once a day (or via the ↻ toolbar button) the app checks GitHub for a newer release. If one exists you get a prompt to download the new single-file app (you pick the folder/file to save to), then a **Reload** button to switch to it. Works offline: the check is simply skipped when there's no network.
@@ -55,7 +56,7 @@ A minimal `.agenda.json` looks like this:
     "rooms": [{ "id": "r1", "name": "Main hall" }, { "id": "r2", "name": "Workshop room" }],
     "items": [
       { "id": "i1", "title": "Welcome", "start": 540, "end": 570, "room": "r1",
-        "color": "#f5a524", "type": "session", "participants": ["p1"], "notes": "", "pinned": false, "spanAll": false }
+        "color": "#f5a524", "type": "session", "participants": ["p1"], "notes": "", "pinned": false, "spanAll": false, "sensitive": false }
     ]
   }]
 }
