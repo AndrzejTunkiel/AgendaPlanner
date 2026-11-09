@@ -375,6 +375,7 @@ kbd{font:600 11px var(--font);background:var(--surface-2);border:1px solid var(-
         <button class="btn icon" id="redo" title="Redo (Ctrl+Y)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
         <div class="sp"></div>
         <button class="btn icon" id="helpBtn" title="Show / hide how it works (?)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h.01"/></svg></button>
+        <button class="btn icon" id="updateBtn" title="Check for updates"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>
       </div>
       <div class="opts">
         <select class="sel" id="themeSel" title="Theme">
@@ -462,6 +463,9 @@ const ICON_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>';
 const ICON_CAL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>';
 const ICON_WARN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v4M12 17.5h.01"/></svg>';
+
+const APP_VERSION = '1.0.0';
+const GH_REPO = 'AndrzejTunkiel/AgendaPlanner';
 
 /* ---------- dialogs (work even where browser prompts are blocked) ---------- */
 function ask(msg, okLabel = 'OK', danger = false, input = null) {
@@ -1365,6 +1369,8 @@ titleIn.addEventListener('change', () => { if (!doc.title.trim()) doc.title = 'U
 $('#undo').onclick = undo; $('#redo').onclick = redo;
 const toggleHelp = () => { ui.help = !ui.help; LS.set('agenda.help', ui.help); renderAll(); };
 $('#helpBtn').onclick = toggleHelp;
+$('#updateBtn').onclick = () => checkForUpdates(true);
+$('#updateBtn').title = `Check for updates — you are on v${APP_VERSION}`;
 $('#snap').onchange = e => { doc.snap = +e.target.value; commit(); };
 $('#zoom').onchange = e => { ui.ppm = +e.target.value; LS.set('agenda.ppm', ui.ppm); renderBoard(); };
 $('#themeSel').value = document.documentElement.dataset.theme || 'auto';
@@ -1468,6 +1474,77 @@ async function learnFolder() {
   } catch (err) { if (err.name !== 'AbortError') toast('Could not read folder: ' + err.message); }
 }
 window.addEventListener('beforeunload', e => { if (isDirty() && ui.fileName) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ---------- self-update (checks GitHub for a newer version) ---------- */
+const parseVer = v => { const p = String(v).replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0); while (p.length < 3) p.push(0); return p; };
+const cmpVer = (a, b) => { const x = parseVer(a), y = parseVer(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
+const rawUrl = tag => `https://raw.githubusercontent.com/${GH_REPO}/${encodeURIComponent(tag)}/Agendaplanner.html`;
+async function fetchLatest() {
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const h = { Accept: 'application/vnd.github+json' };
+    let res = await fetch(`https://api.github.com/repos/${GH_REPO}/releases/latest`, { headers: h, signal: ctrl.signal });
+    if (res.ok) {
+      const j = await res.json();
+      const asset = (j.assets || []).find(a => /\.html?$/i.test(a.name));
+      return { tag: j.tag_name, url: asset ? asset.browser_download_url : rawUrl(j.tag_name) };
+    }
+    if (res.status === 404) {
+      res = await fetch(`https://api.github.com/repos/${GH_REPO}/tags`, { headers: h, signal: ctrl.signal });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const best = (await res.json()).map(t => t.name).filter(n => /^v?\d+\.\d+(\.\d+)?$/i.test(n)).sort(cmpVer).pop();
+      return best ? { tag: best, url: rawUrl(best) } : null;
+    }
+    throw new Error('HTTP ' + res.status);
+  } finally { clearTimeout(t); }
+}
+async function checkForUpdates(manual) {
+  LS.set('agenda.lastUpdateCheck', Date.now());
+  let latest;
+  try { latest = await fetchLatest(); }
+  catch (err) { if (manual) toast('Could not check for updates (' + err.message + ')'); return; }
+  if (!latest) { if (manual) toast('No version found on GitHub yet'); return; }
+  if (cmpVer(latest.tag, APP_VERSION) > 0) promptUpdate(latest);
+  else if (manual) toast(`Up to date — you're on v${APP_VERSION}`);
+}
+function dlgModal(html, onYes) {
+  if (document.querySelector('.modal')) return null;
+  const m = document.createElement('div'); m.className = 'modal';
+  m.innerHTML = `<div class="dlg" role="dialog">${html}</div>`;
+  document.body.appendChild(m);
+  const close = () => { m.remove(); document.removeEventListener('keydown', kd, true); };
+  const kd = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
+  document.addEventListener('keydown', kd, true);
+  m.addEventListener('click', e => {
+    if (e.target.closest('[data-y]')) { close(); onYes(); }
+    else if (e.target.closest('[data-n]') || e.target === m) close();
+  });
+  return m;
+}
+function promptUpdate(latest) {
+  dlgModal(`<p><strong>Agenda Planner ${esc(latest.tag)}</strong> is available — you're on v${esc(APP_VERSION)}.<br>Download the new single-file app, save it over your current <code>Agendaplanner.html</code>, then reload.</p><div class="row"><button class="btn" data-n>Later</button><button class="btn primary" data-y>Download &amp; save</button></div>`, () => downloadUpdate(latest));
+}
+async function downloadUpdate(latest) {
+  toast(`Downloading ${latest.tag}…`);
+  let text;
+  try {
+    const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 20000);
+    const res = await fetch(latest.url, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    text = await res.text();
+  } catch (err) { return toast('Download failed: ' + err.message); }
+  const types = [{ description: 'Agenda Planner app', accept: { 'text/html': ['.html'] } }];
+  let name = 'Agendaplanner.html';
+  if ('showSaveFilePicker' in window && !inFrame) {
+    try {
+      const h = await showSaveFilePicker({ suggestedName: 'Agendaplanner.html', types });
+      const w = await h.createWritable(); await w.write(text); await w.close();
+      name = h.name;
+    } catch (err) { if (err.name === 'AbortError') return; return toast('Save failed: ' + err.message); }
+  } else download(text, 'Agendaplanner.html', 'text/html');
+  dlgModal(`<p>Saved <strong>${esc(name)}</strong> (${esc(latest.tag)}).<br>If you saved it over your current <code>Agendaplanner.html</code>, reload now to switch to the new version.</p><div class="row"><button class="btn" data-n>Not now</button><button class="btn primary" data-y>Reload</button></div>`, () => location.reload());
+}
 
 /* ---------- export ---------- */
 const noteLines = it => String(it.notes || '').split(/\r?\n/).map(l => l.trimEnd()).filter((l, i, a) => l || (i > 0 && i < a.length - 1));
@@ -1886,6 +1963,7 @@ learnPeople(doc.participants.filter(p => !SAMPLE_NAMES.includes(p.name)));
 resetHistory(); renderAll();
 if (draft && draft.doc && draft.fileName && isDirty()) toast(`Restored unsaved changes to ${draft.fileName}`);
 setInterval(() => { if (!ui.drag) renderBoard(); }, 60000);
+if (Date.now() - LS.get('agenda.lastUpdateCheck', 0) > 86400000) setTimeout(() => checkForUpdates(false), 1500);
 window.__agenda = { get doc() { return doc; }, ui };
 })();
 </script>
