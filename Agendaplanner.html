@@ -328,6 +328,7 @@ kbd{font:600 11px var(--font);background:var(--surface-2);border:1px solid var(-
 .xnote{max-width:50%}
 .xmd{width:100%;height:100%;min-height:100%;resize:none;font:13px/1.55 ui-monospace,"Cascadia Mono",Consolas,Menlo,monospace;background:var(--surface);padding:16px 18px;border-radius:10px}
 .xpaper{background:#fff;color:#151821;border-radius:10px;box-shadow:var(--shadow-sm);padding:28px 32px;max-width:760px;margin:0 auto;min-height:100%}
+.xtable{max-width:1040px}
 .ximg{max-width:none;padding:12px;display:grid;place-items:center;align-content:start}
 .ximg img{max-width:100%;height:auto;display:block}
 #tpop{position:fixed;z-index:250;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:4px;max-height:260px;overflow:auto;width:86px;overscroll-behavior:contain}
@@ -1516,6 +1517,51 @@ function agendaHTML() {
   }
   return h + '</div>';
 }
+/* Table export: one table per day, rows in time order across rooms; the plain-text twin is
+   tab-separated so it lands in separate cells when pasted into a spreadsheet. */
+function tableCells(d) {
+  const multi = d.rooms.length > 1 || d.items.some(it => it.spanAll);
+  return it => {
+    const room = it.spanAll ? 'All rooms' : ((d.rooms.find(r => r.id === it.room) || {}).name || '');
+    return [`${fmt(it.start)} - ${fmt(it.end)}`, ...(multi ? [room] : []), (it.title || 'Untitled') + (it.spanAll ? ' (all rooms)' : ''), peopleOf(it).map(p => p.name).join(', '), String(it.notes || '').trim()];
+  };
+}
+function agendaTableHTML() {
+  const f = `font-family:${FONT};color:#151821`;
+  const th = ' style="border:1px solid #d5d9e0;background:#f4f6f9;padding:6px 10px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#687080;white-space:nowrap"';
+  const td = ' style="border:1px solid #e2e5eb;padding:6px 10px;text-align:left;vertical-align:top;font-size:13px"';
+  let h = `<div style="${f}"><h1 style="font-size:22px;margin:0 0 12px">${esc(doc.title)}</h1>`;
+  doc.days.forEach((d, i) => {
+    const label = exportDayLabel(d, i);
+    if (label) h += `<h2 style="font-size:17px;margin:22px 0 8px;color:#ff000f">${esc(label)}</h2>`;
+    const cells = tableCells(d), multi = d.rooms.length > 1 || d.items.some(it => it.spanAll);
+    const heads = ['Time', ...(multi ? ['Room'] : []), 'Session', 'Participants', 'Notes'];
+    h += `<table style="border-collapse:collapse;width:100%"><thead><tr>${heads.map(c => `<th${th}>${c}</th>`).join('')}</tr></thead><tbody>`;
+    if (!d.items.length) h += `<tr><td${td} colspan="${heads.length}" style="color:#9aa1ad">No items scheduled</td></tr>`;
+    for (const it of sortedItems(d)) {
+      const c = cells(it), brk = it.type === 'break';
+      h += `<tr><td${td} style="white-space:nowrap;color:#687080;font-variant-numeric:tabular-nums">${esc(c[0])}</td>`;
+      if (multi) h += `<td${td}>${esc(c[1])}</td>`;
+      const t = multi ? c[2] : c[1], ppl = multi ? c[3] : c[2], notes = multi ? c[4] : c[3];
+      h += `<td${td}><b${brk ? ' style="color:#687080;font-weight:600"' : ''}>${esc(t)}</b></td><td${td}>${esc(ppl)}</td><td${td} style="white-space:pre-wrap">${esc(notes)}</td></tr>`;
+    }
+    h += '</tbody></table>';
+  });
+  return h + '</div>';
+}
+function agendaTableTSV() {
+  const clean = s => String(s == null ? '' : s).replace(/[\t\r\n]+/g, ' ');
+  const L = [`# ${doc.title}`, ''];
+  doc.days.forEach((d, i) => {
+    const label = exportDayLabel(d, i);
+    if (label) L.push(`# ${label}`, '');
+    const cells = tableCells(d), multi = d.items.length ? cells(d.items[0]).length > 4 : d.rooms.length > 1;
+    L.push(['Time', ...(multi ? ['Room'] : []), 'Session', 'Participants', 'Notes'].join('\t'));
+    for (const it of sortedItems(d)) L.push(cells(it).map(clean).join('\t'));
+    L.push('');
+  });
+  return L.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+}
 async function copyPlain(text) {
   try { await navigator.clipboard.writeText(text); return true; }
   catch { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); return ok; }
@@ -1739,6 +1785,7 @@ async function pngBlob() {
 const XTABS = {
   md: { label: 'Markdown', note: 'Edit freely before copying or downloading. Edits here don’t change the agenda.', dl: 'Download .md', copy: 'Copy text' },
   html: { label: 'Formatted', note: 'Pastes with headings and bullet lists into Outlook, Teams or Word.', dl: 'Download .html', copy: 'Copy formatted' },
+  table: { label: 'Table', note: 'Pastes as a real table into Excel, Word, Outlook or Teams.', dl: 'Download .html', copy: 'Copy table' },
   img: { label: 'Image', note: '', dl: 'Download PNG', copy: 'Copy image' }
 };
 let xp = null;
@@ -1782,6 +1829,8 @@ async function showXTab(tab) {
     const ta = $('.xmd', body); ta.value = xp.md; ta.focus(); ta.setSelectionRange(0, 0); ta.scrollTop = 0;
   } else if (tab === 'html') {
     body.innerHTML = `<div class="xpaper">${agendaHTML()}</div>`;
+  } else if (tab === 'table') {
+    body.innerHTML = `<div class="xpaper xtable">${agendaTableHTML()}</div>`;
   } else {
     body.innerHTML = '<div class="xpaper ximg"><span class="muted small">Rendering…</span></div>';
     if (!xp.blob) {
@@ -1805,6 +1854,10 @@ async function xAction(a) {
     const html = agendaHTML();
     if (a === 'copy') toast(await copyRich(html, xp.md) ? 'Copied. Paste into an email, Teams or a document' : 'Copy failed');
     else { download(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(doc.title)}</title></head><body style="max-width:760px;margin:40px auto;padding:0 20px">${html}</body></html>`, name + '.html', 'text/html'); toast(`Downloaded ${name}.html`); }
+  } else if (tab === 'table') {
+    const html = agendaTableHTML();
+    if (a === 'copy') toast(await copyRich(html, agendaTableTSV()) ? 'Copied. Paste into Excel, Word, Outlook or Teams' : 'Copy failed');
+    else { download(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(doc.title)}</title></head><body style="max-width:1000px;margin:40px auto;padding:0 20px">${html}</body></html>`, name + '.table.html', 'text/html'); toast(`Downloaded ${name}.table.html`); }
   } else {
     if (!xp.blob) return;
     if (a === 'copy') {

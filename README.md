@@ -30,7 +30,7 @@ Because an agenda is a single JSON document, you can keep agendas in git, genera
 - **Participants** — badges on every item, per-person totals, name suggestions learned from your previous agendas.
 - **Direct manipulation** — drag item edges to resize (touching items stay glued), drag the body to move, drag further to unglue and reorder, double-click empty time to insert, pin items so edits never move them.
 - **Breaks, colors, notes** — session/break types, per-item colors, notes shown on the board and in exports.
-- **Exports** — preview, then copy or download as **Markdown**, **formatted HTML** (paste into Outlook/Teams/Word), or a **PNG image** of the whole agenda (rooms shown as sub-columns, like the board). Print/PDF works too.
+- **Exports** — preview, then copy or download as **Markdown**, **formatted HTML** (paste into Outlook/Teams/Word), a **table** (one per day; pastes as real cells into Excel/Word/Outlook, with a Room column on multi-room days), or a **PNG image** of the whole agenda (rooms shown as sub-columns, like the board). Print/PDF works too.
 - **Undo/redo** (Ctrl+Z / Ctrl+Y), zoom and snap-step controls, 9 color themes (auto dark/light + Solarized, Nord, Gruvbox, Dracula).
 
 ![Multi-room day in the image export](screenshots/export-multi-room.svg)
