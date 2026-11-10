@@ -348,6 +348,17 @@ kbd{font:600 11px var(--font);background:var(--surface-2);border:1px solid var(-
 #toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);background:var(--text);color:var(--surface);padding:10px 16px;border-radius:10px;font-size:13px;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:all .2s;z-index:400;max-width:80vw}
 #toast.show{opacity:1;transform:translate(-50%,0)}
 
+/* Read-only exported copy (window.__AGENDA_EXPORT__ set): viewing only, no editing affordances */
+body.ro .tools .btn,body.ro .tools .sep{display:none}
+body.ro #helpBtn{display:inline-flex}
+body.ro #hideSensLbl,body.ro #snap{display:none}
+body.ro #docTitle{pointer-events:none}
+body.ro .plus,body.ro .h,body.ro .edge,body.ro .add-day{display:none}
+body.ro .card{cursor:pointer}
+body.ro .person .x{display:none!important}
+.ro-title{font:650 18px/1.3 var(--font);margin:6px 0 8px;overflow-wrap:anywhere}
+.ro-notes{white-space:pre-wrap;margin:0;overflow-wrap:anywhere;font-size:13.5px;line-height:1.5}
+
 @media (max-width:1150px){
   main.app{grid-template-columns:240px 1fr}
   #editor{position:fixed;right:0;top:0;bottom:0;box-shadow:var(--shadow);transform:translateX(105%);transition:transform .2s;z-index:30;display:block!important}
@@ -412,6 +423,9 @@ kbd{font:600 11px var(--font);background:var(--surface-2);border:1px solid var(-
 <script>
 (() => {
 'use strict';
+/* An exported read-only copy injects window.__AGENDA_EXPORT__ = { readonly: true, doc } before this script. */
+const EXPORT = window.__AGENDA_EXPORT__ || null;
+const READONLY = !!(EXPORT && EXPORT.readonly);
 /* ---------- helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -578,10 +592,11 @@ function afterHist() {
   if (ui.sel && !findItem(ui.sel)) ui.sel = null;
   saveDraft(); renderAll();
 }
-function saveDraft() { LS.set('agenda.draft', { doc, fileName: ui.fileName, savedJson: ui.savedJson }); }
+function saveDraft() { if (READONLY) return; LS.set('agenda.draft', { doc, fileName: ui.fileName, savedJson: ui.savedJson }); }
 
 /* ---------- people ---------- */
 function learnPeople(arr) {
+  if (READONLY) return 0;
   const k = LS.get('agenda.people', []); const byName = new Map(k.map(x => [x.name.toLowerCase(), x])); let n = 0;
   for (const p of arr) {
     if (!p || !p.name) continue;
@@ -906,11 +921,18 @@ function renderAll() {
 
 function renderTop() {
   const t = $('#docTitle'); if (document.activeElement !== t) { t.value = doc.title; grow(t); }
-  const dirty = isDirty(), st = $('#status');
+  const st = $('#status');
+  if (READONLY) {
+    st.classList.remove('dirty');
+    st.innerHTML = `<span class="dot"></span><span class="t">Read-only view</span>`;
+    st.title = '';
+  } else {
+  const dirty = isDirty();
   st.classList.toggle('dirty', dirty);
   st.innerHTML = `<span class="dot"></span><span class="t">${esc(ui.fileName || 'Not saved yet')}${dirty && ui.fileName ? ' · edited' : ''}</span>`;
   st.title = ui.handle ? 'Ctrl+S saves straight back to this file' : ui.fileName ? 'Ctrl+S downloads a new copy (this browser can’t write to the original file)' : 'Ctrl+S to save';
   if (ui.fileName && !ui.handle) st.querySelector('.t').textContent += ' (download)';
+  }
   $('#undo').disabled = hi <= 0; $('#redo').disabled = hi >= hist.length - 1;
   $('#snap').value = String(doc.snap); $('#zoom').value = String(ui.ppm);
   $('#helpBtn').classList.toggle('on', !!ui.help);
@@ -934,8 +956,14 @@ function renderSide() {
       <div class="pedit-row"><input class="txt ini" data-f="pini" value="${esc(ui.editDraft ? ui.editDraft.ini : (p.initials || ''))}" placeholder="${esc(autoInitials(p.name))}" maxlength="3" title="Initials, up to 3 letters (leave empty for automatic)">
       <span class="sp"></span><button class="btn sm" data-pcancel>Cancel</button><button class="btn sm primary" data-psave>Save</button></div></div>`;
     const s = stats.get(p.id), obN = cf.ppl.get(p.id) || 0;
-    return `<div class="person ${ui.hl === p.id ? 'on' : ''}" data-pid="${p.id}" title="Click to highlight their items · double-click to edit">${avatar(p)}<div class="meta"><div class="name">${esc(p.name)}</div><div class="sub">${s ? `${s.n} item${s.n > 1 ? 's' : ''} · ${dur(s.m)}` : 'Not assigned yet'}${obN ? ` · <span class="obt">overbooked ×${obN}</span>` : ''}</div></div><button class="x" data-ren="${p.id}" title="Edit name and initials">${ICON_EDIT}</button><button class="x" data-del="${p.id}" title="Remove from agenda">${ICON_X}</button></div>`;
+    return `<div class="person ${ui.hl === p.id ? 'on' : ''}" data-pid="${p.id}" title="${READONLY ? 'Click to highlight their items' : 'Click to highlight their items · double-click to edit'}">${avatar(p)}<div class="meta"><div class="name">${esc(p.name)}</div><div class="sub">${s ? `${s.n} item${s.n > 1 ? 's' : ''} · ${dur(s.m)}` : 'Not assigned yet'}${obN ? ` · <span class="obt">overbooked ×${obN}</span>` : ''}</div></div>${READONLY ? '' : `<button class="x" data-ren="${p.id}" title="Edit name and initials">${ICON_EDIT}</button><button class="x" data-del="${p.id}" title="Remove from agenda">${ICON_X}</button>`}</div>`;
   };
+  if (READONLY) {
+    $('#sideDyn').innerHTML = `<div class="panel"><h3>Participants <span>${ppl.length || ''}</span></h3>
+    <div class="plist">${ppl.map(row).join('') ||
+      '<p class="small muted" style="margin:6px 2px">No participants in this agenda.</p>'}</div></div>`;
+    return;
+  }
   $('#sideDyn').innerHTML = `<div class="panel"><h3>Participants <span>${ppl.length || ''}</span></h3>
     <div class="field"><input class="txt" data-f="sideAdd" placeholder="Add participant and press Enter" autocomplete="off" spellcheck="false"></div>
     <div class="plist">${ppl.map(row).join('') ||
@@ -975,8 +1003,8 @@ function renderBoard() {
       const cls = [size, it.type === 'break' ? 'brk' : '', it.pinned ? 'pinned' : '', it.spanAll ? 'span' : '', ob ? 'ob' : '', ui.sel === it.id ? 'sel' : '', ui.hl && !it.participants.includes(ui.hl) ? 'dim' : '', ui.drag && ui.drag.moved && ui.drag.itemId === it.id ? 'dragging' + (ui.drag.unglued ? ' unglued' : '') : ''].join(' ');
       return `<div class="item ${cls}" data-id="${it.id}" style="top:${top}px;height:${h}px;left:${left}%;width:${width}%;--c:${it.color}">
         <div class="card" title="${esc(it.title)}${it.spanAll ? ' (all rooms)' : ''}${ppl.length ? ' — ' + esc(names(it)) : ''}${notes ? '\n\n' + esc(notes) : ''}${ob ? '\n\nOverbooked: ' + esc(obNames) : ''}"><div class="t-time"><span>${fmt(it.start)}–${fmt(it.end)}</span><span class="d">${dur(it.end - it.start)}</span></div><div class="t-main"><div class="t-head">${ob ? `<span class="obw" title="Overbooked: ${esc(obNames)}">${ICON_WARN}</span>` : ''}<div class="t-title">${it.pinned ? `<span class="pin" title="Pinned">${ICON_PIN}</span>` : ''}${esc(it.title) || '<span class="muted">Untitled</span>'}${it.spanAll ? ' <span class="muted small">(all rooms)</span>' : ''}</div>${notes ? `<span class="t-nicon" hidden>${ICON_NOTE}</span>` : ''}</div>${notes ? `<div class="t-notes">${esc(notes)}</div>` : ''}</div>${ppl.length ? `<div class="t-ppl">${ppl.map(p => avatar(p)).join('')}<span class="more" hidden></span></div>` : ''}</div>
-        <div class="h top" data-h="top" title="Drag to change start"></div><div class="h bot" data-h="bottom" title="Drag to change end"></div>
-        <button class="plus ptop" data-plus="before" title="Insert item before">+</button><button class="plus pbot" data-plus="after" title="Insert item after">+</button></div>`;
+        ${READONLY ? '' : `<div class="h top" data-h="top" title="Drag to change start"></div><div class="h bot" data-h="bottom" title="Drag to change end"></div>
+        <button class="plus ptop" data-plus="before" title="Insert item before">+</button><button class="plus pbot" data-plus="after" title="Insert item after">+</button>`}</div>`;
     };
     const rooms = d.rooms.map(r => {
       const rits = vis.filter(i => i.room === r.id && !i.spanAll), lay = lanes(rits);
@@ -985,29 +1013,33 @@ function renderBoard() {
     }).join('');
     const spans = vis.filter(it => it.spanAll).map(it => itemHtml(it, 0, 100)).join('');
     const now = d.date === today && nowM >= ax.s && nowM <= ax.e ? `<div class="now" style="top:${(nowM - ax.s) * ppm}px"></div>` : '';
-    const strip = roomsMax > 1 ? `<div class="dh4">${d.rooms.map((r, ri) => `<div class="rtab" data-room="${r.id}"><input class="rin" data-k="roomname" value="${esc(r.name)}" placeholder="Room ${ri + 1}" spellcheck="false" title="Room name"><button class="x" data-act="delroom" title="Delete this room (its items move to another room)">${ICON_X}</button></div>`).join('')}</div>` : '';
+    const strip = roomsMax > 1 ? (READONLY
+      ? `<div class="dh4">${d.rooms.map((r, ri) => `<span class="rtab">${esc(r.name) || 'Room ' + (ri + 1)}</span>`).join('')}</div>`
+      : `<div class="dh4">${d.rooms.map((r, ri) => `<div class="rtab" data-room="${r.id}"><input class="rin" data-k="roomname" value="${esc(r.name)}" placeholder="Room ${ri + 1}" spellcheck="false" title="Room name"><button class="x" data-act="delroom" title="Delete this room (its items move to another room)">${ICON_X}</button></div>`).join('')}</div>`) : '';
     return `<section class="day" data-day="${d.id}"${roomsMax > 1 ? ' style="max-width:880px"' : ''}>
       <div class="day-head">
         <div class="dh1"><span class="dnum">Day ${i + 1}</span><span class="wd">${esc(weekday(d))}</span><span class="sp"></span>
-          <button class="ib" data-act="addroom" title="Add a room (parallel track) to this day">+</button>
-          <button class="ib" data-act="dup" title="Duplicate day">${ICON_DUP}</button>${doc.days.length > 1 ? `<button class="ib" data-act="del" title="Delete day">${ICON_DEL}</button>` : ''}</div>
-        <div class="dh2"><input class="din" data-k="date" data-f="date-${d.id}" value="${esc(d.date)}" placeholder="YYYY-MM-DD" spellcheck="false" title="Date (YYYY-MM-DD, optional)"><button class="ib" data-act="cal" title="Pick a date">${ICON_CAL}</button><input type="date" class="dpick" data-k="datepick" tabindex="-1" value="${esc(d.date)}" aria-hidden="true">
+          ${READONLY ? '' : `<button class="ib" data-act="addroom" title="Add a room (parallel track) to this day">+</button>
+          <button class="ib" data-act="dup" title="Duplicate day">${ICON_DUP}</button>${doc.days.length > 1 ? `<button class="ib" data-act="del" title="Delete day">${ICON_DEL}</button>` : ''}`}</div>
+        ${READONLY
+          ? `<div class="dh2"><span class="din" title="Date">${esc(d.date || '—')}</span><span class="tin" title="Day start – end" style="width:auto">${fmt(d.start)}–${fmt(d.end)}</span></div>`
+          : `<div class="dh2"><input class="din" data-k="date" data-f="date-${d.id}" value="${esc(d.date)}" placeholder="YYYY-MM-DD" spellcheck="false" title="Date (YYYY-MM-DD, optional)"><button class="ib" data-act="cal" title="Pick a date">${ICON_CAL}</button><input type="date" class="dpick" data-k="datepick" tabindex="-1" value="${esc(d.date)}" aria-hidden="true">
           <input class="tin" data-k="start" data-f="ds-${d.id}" value="${fmt(d.start)}" inputmode="numeric" title="Day start (24h). Changing it shifts the whole day except pinned items. ↑/↓ to step."><span>–</span>
-          <input class="tin" data-k="end" data-f="de-${d.id}" data-rel="${d.start}" value="${fmt(d.end)}" inputmode="numeric" title="Day end (24h)"></div>
+          <input class="tin" data-k="end" data-f="de-${d.id}" data-rel="${d.start}" value="${fmt(d.end)}" inputmode="numeric" title="Day end (24h)"></div>`}
         <div class="dh3">${vis.length} item${vis.length === 1 ? '' : 's'} · ${dur(work)} of sessions${lastEnd != null ? ` · last ends ${fmt(lastEnd)}` : ''}${dayOb ? ` · <span class="obt">Overbooked ×${dayOb}</span>` : ''}</div>
         ${strip}
       </div>
       <div class="day-body" style="height:${H}px">
         <div class="win" style="top:${wt}px;height:${wh}px;background-position:0 ${-wt - 1}px">
-          <div class="edge top"><div class="grip" data-h="daystart" title="Drag to change when the day starts">${ICON_GRIP}${fmt(d.start)}</div><button class="plus" data-plus="daystart" title="Add item at start of day">+</button></div>
-          ${vis.length ? '' : '<div class="empty">Click + or double-click<br>to add an agenda item</div>'}
-          <div class="edge bot"><div class="grip" data-h="dayend" title="Drag to change when the day ends">${ICON_GRIP}${fmt(d.end)}</div><button class="plus" data-plus="dayend" title="Add item at end of day">+</button></div>
+          ${READONLY ? '' : `<div class="edge top"><div class="grip" data-h="daystart" title="Drag to change when the day starts">${ICON_GRIP}${fmt(d.start)}</div><button class="plus" data-plus="daystart" title="Add item at start of day">+</button></div>`}
+          ${vis.length ? '' : `<div class="empty">${READONLY ? 'No items scheduled' : 'Click + or double-click<br>to add an agenda item'}</div>`}
+          ${READONLY ? '' : `<div class="edge bot"><div class="grip" data-h="dayend" title="Drag to change when the day ends">${ICON_GRIP}${fmt(d.end)}</div><button class="plus" data-plus="dayend" title="Add item at end of day">+</button></div>`}
         </div>
         <div class="rooms">${rooms}${spans}</div>${now}
       </div></section>`;
   }).join('');
   queueMicrotask(fitCards);
-  $('#board').innerHTML = `<div class="board" style="--ppm:${ppm};--headH:${headH}px"><div class="axis"><div class="axis-head"></div><div class="axis-body" style="height:${H}px">${axis}</div></div>${days}<button class="add-day" data-act="addday" title="Add day">+</button></div>`;
+  $('#board').innerHTML = `<div class="board" style="--ppm:${ppm};--headH:${headH}px"><div class="axis"><div class="axis-head"></div><div class="axis-body" style="height:${H}px">${axis}</div></div>${days}${READONLY ? '' : '<button class="add-day" data-act="addday" title="Add day">+</button>'}</div>`;
 }
 
 /* Show every badge that fits; only collapse the tail into "+n" when they would overflow the card. */
@@ -1045,6 +1077,7 @@ let fitT; window.addEventListener('resize', () => { clearTimeout(fitT); fitT = s
 function renderEditor() {
   const el = $('#editor');
   const f = ui.sel && findItem(ui.sel);
+  if (READONLY) return renderViewer(f);
   document.body.classList.toggle('has-sel', !!f);
   document.body.classList.toggle('no-editor', !f && !ui.help);
   if (!f) {
@@ -1104,6 +1137,38 @@ function renderEditor() {
   grow($('[data-f=title]', el)); growNotes($('[data-f=notes]', el));
   if (ui.focusTitle) { ui.focusTitle = false; const t = $('[data-f=title]', el); setTimeout(() => { t.focus(); t.select(); }, 0); }
 }
+/* Read-only exported copy: the side panel becomes a details view (click an item on the board). */
+function renderViewer(f) {
+  const el = $('#editor');
+  document.body.classList.toggle('has-sel', !!f);
+  document.body.classList.toggle('no-editor', !f && !ui.help);
+  if (!f) {
+    el.innerHTML = `<div class="panel hint"><h3>How to read this agenda <button class="ib" data-e="hidehelp" title="Hide (show again with ? in the toolbar)">${ICON_X}</button></h3><ul>
+      <li><span class="k">☝</span><span><b>Click a participant</b> in the sidebar to highlight all their sessions; click again to clear.</span></li>
+      <li><span class="k">▣</span><span><b>Click an item</b> on the board to see its details here.</span></li>
+      <li><span class="k">Esc</span><span><b>Deselect</b> the current item.</span></li></ul>
+      <h3 style="margin-top:22px">Shortcuts</h3><div class="keys">
+      <span><kbd>?</kbd></span><span>Show/hide this panel</span>
+      <span><kbd>Esc</kbd></span><span>Deselect</span></div>
+      <p class="small muted" style="margin-top:20px">This is a read-only copy — nothing here can be edited or saved.</p></div>`;
+    return;
+  }
+  const { day, it } = f, di = doc.days.indexOf(day);
+  const room = day.rooms.find(r => r.id === it.room);
+  const ppl = peopleOf(it);
+  const cf = conflicts(), ob = cf.items.get(it.id);
+  const obNames = ob ? [...ob].map(pid => { const p = person(pid); return p ? p.name : ''; }).filter(Boolean).join(', ') : '';
+  el.innerHTML = `<div class="panel ed">
+    <div class="ed-top"><span class="pill" style="--c:${it.color}">${esc(dayLabel(day, di))}${day.rooms.length > 1 && room ? ' · ' + esc(room.name || 'Room') : ''}</span><button class="ib" data-e="close" title="Close (Esc)">${ICON_X}</button></div>
+    <div class="ro-title">${esc(it.title) || '<span class="muted">Untitled</span>'}${it.spanAll ? ' <span class="muted small">(all rooms)</span>' : ''}</div>
+    <p class="small muted" style="margin:0">${it.type === 'break' ? 'Break' : 'Session'}${it.pinned ? ' · pinned' : ''} · ${fmt(it.start)}–${fmt(it.end)} · ${dur(it.end - it.start)}</p>
+    ${ob ? `<div class="small obt" style="margin-top:10px;display:flex;gap:6px;align-items:center"><span class="obw" style="margin:0">${ICON_WARN}</span><span>Overbooked: ${esc(obNames)} — overlaps another item in this day</span></div>` : ''}
+    <div class="lbl">Participants <span>${ppl.length || ''}</span></div>
+    ${ppl.length ? `<div class="chips">${ppl.map(p => `<span class="chip">${avatar(p, 's0')}${esc(p.name)}</span>`).join('')}</div>` : '<p class="small muted" style="margin:0">None</p>'}
+    <div class="lbl">Notes</div>
+    ${String(it.notes || '').trim() ? `<p class="ro-notes">${esc(it.notes)}</p>` : '<p class="small muted" style="margin:0">None</p>'}
+  </div>`;
+}
 function renderEditorTimes() {
   const f = ui.sel && findItem(ui.sel); if (!f) return;
   const el = $('#editor'), s = $('[data-f=start]', el), e = $('[data-f=end]', el), d = $('.durv', el);
@@ -1158,6 +1223,12 @@ window.addEventListener('resize', closeTP);
 const board = $('#board');
 board.addEventListener('pointerdown', e => {
   ui.downOnItem = !!e.target.closest('.item,.edge,.day-head');
+  if (READONLY) {
+    if (e.button !== 0) return;
+    const itemEl = e.target.closest('.item');
+    if (itemEl && !e.target.closest('button,input,select,textarea')) { ui.sel = itemEl.dataset.id; renderAll(); }
+    return;
+  }
   if (e.button !== 0) return;
   if (e.target.closest('.plus,input,button,select,textarea')) return;
   const h = e.target.closest('[data-h]'), itemEl = e.target.closest('.item'), dayEl = e.target.closest('.day'), roomEl = e.target.closest('.room');
@@ -1245,6 +1316,7 @@ board.addEventListener('click', e => {
   if (!fromItem && !e.target.closest('.item,.day-head,input,button') && ui.sel) { ui.sel = null; renderAll(); }
 });
 board.addEventListener('dblclick', e => {
+  if (READONLY) return;
   if (e.target.closest('.item,.day-head,.edge,button,input')) return;
   const roomEl = e.target.closest('.room'); if (!roomEl) return;
   const day = getDay(roomEl.dataset.day), ax = axisRange(), r = roomEl.getBoundingClientRect();
@@ -1350,6 +1422,7 @@ side.addEventListener('click', async e => {
   }
 });
 side.addEventListener('dblclick', e => {
+  if (READONLY) return;
   const row = e.target.closest('[data-pid]'); if (!row || e.target.closest('button')) return;
   ui.hl = null; startPersonEdit(row.dataset.pid); renderAll();
 });
@@ -1442,6 +1515,11 @@ $('#exportBtn').onclick = () => openExport();
 
 document.addEventListener('keydown', e => {
   if (document.querySelector('.modal')) return;
+  if (READONLY) {
+    if (e.key === 'Escape' && ui.sel) { ui.sel = null; renderAll(); }
+    else if (e.key === '?' && !(e.target.closest && e.target.closest('input,textarea,select'))) toggleHelp();
+    return;
+  }
   const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
   if (mod && k === 's') { e.preventDefault(); save(e.shiftKey); return; }
   if (mod && k === 'o') { e.preventDefault(); openFile(); return; }
@@ -1512,6 +1590,7 @@ async function newAgenda() {
 }
 window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', async e => {
+  if (READONLY) return;
   e.preventDefault();
   const item = [...(e.dataTransfer?.items || [])].find(i => i.kind === 'file'); if (!item) return;
   const file = item.getAsFile(), hp = item.getAsFileSystemHandle ? item.getAsFileSystemHandle() : null;
@@ -1915,15 +1994,42 @@ async function pngBlob() {
   const g = c.getContext('2d'); g.scale(s, s); g.drawImage(img, 0, 0, W, H);
   return new Promise(r => c.toBlob(r, 'image/png'));
 }
+/* Read-only app export: the agenda baked into a standalone copy of this file. With "Hide sensitive"
+   on, sensitive items — and people who appear only on them — are stripped so they are not in the file. */
+function readOnlyDoc() {
+  const d = clone(doc);
+  if (!ui.hideSensitive) return d;
+  const hidden = new Set();
+  for (const day of d.days) {
+    day.items = day.items.filter(it => {
+      if (it.sensitive) { it.participants.forEach(p => hidden.add(p)); return false; }
+      return true;
+    });
+  }
+  const shown = new Set();
+  for (const day of d.days) for (const it of day.items) for (const p of it.participants) shown.add(p);
+  d.participants = d.participants.filter(p => shown.has(p.id) || !hidden.has(p.id));
+  return d;
+}
+function readOnlyAppHTML() {
+  const json = JSON.stringify({ readonly: true, doc: readOnlyDoc() })
+    .replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+  const root = document.documentElement.cloneNode(true);
+  root.querySelectorAll('#xmodal, #tpop, #fileInput').forEach(n => n.remove());
+  return '<!doctype html>\n' + root.outerHTML.replace(/<body[^>]*>/, () => `<body><script>window.__AGENDA_EXPORT__=${json};<\/script>`);
+}
+
 /* ---------- export preview ---------- */
 const XTABS = {
   md: { label: 'Markdown', note: 'Edit freely before copying or downloading. Edits here don’t change the agenda.', dl: 'Download .md', copy: 'Copy text' },
   html: { label: 'Formatted', note: 'Pastes with headings and bullet lists into Outlook, Teams or Word.', dl: 'Download .html', copy: 'Copy formatted' },
   table: { label: 'Table', note: 'Pastes as a real table into Excel, Word, Outlook or Teams.', dl: 'Download .html', copy: 'Copy table' },
-  img: { label: 'Image', note: '', dl: 'Download PNG', copy: 'Copy image' }
+  img: { label: 'Image', note: '', dl: 'Download PNG', copy: 'Copy image' },
+  ro: { label: 'Read-only HTML', note: 'The whole planner as one HTML file with this agenda baked in — viewers can click participants to highlight their sessions and items for details, but nothing can be edited. Sensitive items are left out while “Hide sensitive” is on.', dl: 'Download .html', copy: 'Copy HTML source' }
 };
 let xp = null;
 function openExport(tab) {
+  if (READONLY) return;
   closeExport();
   tab = XTABS[tab] ? tab : (XTABS[LS.get('agenda.xtab', 'md')] ? LS.get('agenda.xtab', 'md') : 'md');
   const m = document.createElement('div'); m.className = 'modal'; m.id = 'xmodal';
@@ -1936,7 +2042,7 @@ function openExport(tab) {
   document.body.appendChild(m);
   const kd = e => { if (e.key === 'Escape' && !document.querySelector('.modal:not(#xmodal)')) { e.preventDefault(); e.stopPropagation(); closeExport(); } };
   document.addEventListener('keydown', kd, true);
-  xp = { m, kd, tab: null, md: agendaText(), blob: null, url: null, size: null };
+  xp = { m, kd, tab: null, md: agendaText(), blob: null, url: null, size: null, ro: null };
   m.addEventListener('click', e => {
     if (e.target === m || e.target.closest('[data-xclose]')) return closeExport();
     const t = e.target.closest('[data-xt]'); if (t) return showXTab(t.dataset.xt);
@@ -1965,6 +2071,11 @@ async function showXTab(tab) {
     body.innerHTML = `<div class="xpaper">${agendaHTML()}</div>`;
   } else if (tab === 'table') {
     body.innerHTML = `<div class="xpaper xtable">${agendaTableHTML()}</div>`;
+  } else if (tab === 'ro') {
+    if (!xp.ro) xp.ro = readOnlyAppHTML();
+    body.innerHTML = `<div class="xpaper"><h2 style="font-size:17px;margin:0 0 10px">Read-only copy of the planner</h2>
+      <p style="margin:0 0 8px;color:#687080">Download gives you a standalone HTML file: this agenda baked into the full planner, with every editing control removed. Viewers can click participants to highlight their sessions and click items to see their details.</p>
+      <p class="small muted" style="margin:0">${(xp.ro.length / 1024).toFixed(0)} KB HTML${ui.hideSensitive ? ' · sensitive items removed' : ''}</p></div>`;
   } else {
     body.innerHTML = '<div class="xpaper ximg"><span class="muted small">Rendering…</span></div>';
     if (!xp.blob) {
@@ -1998,6 +2109,10 @@ async function xAction(a) {
     const html = agendaTableHTML();
     if (a === 'copy') toast(await copyRich(html, agendaTableTSV()) ? 'Copied. Paste into Excel, Word, Outlook or Teams' : 'Copy failed');
     else { download(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(doc.title)}</title></head><body style="max-width:1000px;margin:40px auto;padding:0 20px">${html}</body></html>`, name + '.table.html', 'text/html'); toast(`Downloaded ${name}.table.html`); }
+  } else if (tab === 'ro') {
+    const html = xp.ro || readOnlyAppHTML();
+    if (a === 'copy') toast(await copyPlain(html) ? 'Read-only HTML copied to clipboard' : 'Copy failed');
+    else { download(html, name + '.readonly.html', 'text/html'); toast(`Downloaded ${name}.readonly.html`); }
   } else {
     if (!xp.blob) return;
     if (a === 'copy') {
@@ -2011,26 +2126,34 @@ async function xAction(a) {
 let tt;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 2800); }
 
-const draft = LS.get('agenda.draft', null);
-try {
-  if (draft && draft.doc) {
-    doc = normalize(draft.doc); ui.fileName = draft.fileName || null;
-    // a draft that matched its file is still clean even if normalize() tidied it
-    ui.savedJson = !draft.savedJson || JSON.stringify(draft.doc) === draft.savedJson ? JSON.stringify(doc) : draft.savedJson;
+let draft = null;
+if (READONLY) {
+  // exported read-only copy: the agenda is baked in; never touch local drafts or name suggestions
+  try { doc = normalize(EXPORT.doc); } catch { doc = normalize(sampleDoc()); }
+  ui.hideSensitive = false; ui.fileName = null; ui.savedJson = JSON.stringify(doc);
+  document.body.classList.add('ro');
+} else {
+  draft = LS.get('agenda.draft', null);
+  try {
+    if (draft && draft.doc) {
+      doc = normalize(draft.doc); ui.fileName = draft.fileName || null;
+      // a draft that matched its file is still clean even if normalize() tidied it
+      ui.savedJson = !draft.savedJson || JSON.stringify(draft.doc) === draft.savedJson ? JSON.stringify(doc) : draft.savedJson;
+    }
+    else throw 0;
+  } catch { doc = normalize(sampleDoc()); ui.savedJson = JSON.stringify(doc); }
+  // keep the sample agenda's names out of the suggestions
+  if (!LS.get('agenda.samplePurged', false)) {
+    const drop = new Set(SAMPLE_NAMES.map(n => n.toLowerCase()));
+    LS.set('agenda.people', LS.get('agenda.people', []).filter(k => !drop.has(k.name.toLowerCase())));
+    LS.set('agenda.samplePurged', true);
   }
-  else throw 0;
-} catch { doc = normalize(sampleDoc()); ui.savedJson = JSON.stringify(doc); }
-// keep the sample agenda's names out of the suggestions
-if (!LS.get('agenda.samplePurged', false)) {
-  const drop = new Set(SAMPLE_NAMES.map(n => n.toLowerCase()));
-  LS.set('agenda.people', LS.get('agenda.people', []).filter(k => !drop.has(k.name.toLowerCase())));
-  LS.set('agenda.samplePurged', true);
+  learnPeople(doc.participants.filter(p => !SAMPLE_NAMES.includes(p.name)));
 }
-learnPeople(doc.participants.filter(p => !SAMPLE_NAMES.includes(p.name)));
 resetHistory(); renderAll();
 if (draft && draft.doc && draft.fileName && isDirty()) toast(`Restored unsaved changes to ${draft.fileName}`);
 setInterval(() => { if (!ui.drag && !board.contains(document.activeElement)) renderBoard(); }, 60000);   // moves the "now" line; never while a board field is being edited
-if (Date.now() - LS.get('agenda.lastUpdateCheck', 0) > 86400000) setTimeout(() => checkForUpdates(false), 1500);
+if (!READONLY && Date.now() - LS.get('agenda.lastUpdateCheck', 0) > 86400000) setTimeout(() => checkForUpdates(false), 1500);
 window.__agenda = { get doc() { return doc; }, ui };
 })();
 </script>
