@@ -921,13 +921,12 @@ function renderAll() {
 
 function renderTop() {
   const t = $('#docTitle'); if (document.activeElement !== t) { t.value = doc.title; grow(t); }
-  const st = $('#status');
+  const st = $('#status'), dirty = isDirty();
   if (READONLY) {
     st.classList.remove('dirty');
     st.innerHTML = `<span class="dot"></span><span class="t">Read-only view</span>`;
     st.title = '';
   } else {
-  const dirty = isDirty();
   st.classList.toggle('dirty', dirty);
   st.innerHTML = `<span class="dot"></span><span class="t">${esc(ui.fileName || 'Not saved yet')}${dirty && ui.fileName ? ' · edited' : ''}</span>`;
   st.title = ui.handle ? 'Ctrl+S saves straight back to this file' : ui.fileName ? 'Ctrl+S downloads a new copy (this browser can’t write to the original file)' : 'Ctrl+S to save';
