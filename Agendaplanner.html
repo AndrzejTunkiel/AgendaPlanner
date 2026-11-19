@@ -348,9 +348,12 @@ kbd{font:600 11px var(--font);background:var(--surface-2);border:1px solid var(-
 #tpop small{color:var(--faint);font-size:11px;font-weight:400}
 #toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);background:var(--text);color:var(--surface);padding:10px 16px;border-radius:10px;font-size:13px;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:all .2s;z-index:400;max-width:80vw}
 #toast.show{opacity:1;transform:translate(-50%,0)}
+#mbar{display:none}
+#scrim{display:none}
 
 /* Read-only (shared) copy: no editing controls, just navigation, highlighting, details and export */
 body.ro #newBtn,body.ro #openBtn,body.ro #saveBtn,body.ro #undo,body.ro #redo,body.ro .tools .sep,body.ro #updateBtn,body.ro #snap,body.ro #hideSensLbl,
+body.ro #mUndo,body.ro #mRedo,body.ro #mSave,
 body.ro .add-day,body.ro .plus,body.ro .h,body.ro .day-head .ib,body.ro .dpick,body.ro .rtab .x,body.ro .person .x{display:none!important}
 body.ro .card{cursor:pointer}
 body.ro .grip{cursor:default}
@@ -379,10 +382,45 @@ body.ro .rtab input{pointer-events:none}
   #editor{position:fixed;right:0;top:0;bottom:0;box-shadow:var(--shadow);transform:translateX(105%);transition:transform .2s;z-index:30;display:block!important}
   body.has-sel #editor{transform:none}
 }
-@media (max-width:760px){ main.app{grid-template-columns:1fr} #side{display:none}
+@media (max-width:760px){
+  html,body{touch-action:manipulation}
+  main.app{grid-template-columns:1fr;grid-template-rows:46px 1fr}
+  /* compact top bar: menu, title, undo/redo, save, export */
+  #mbar{display:flex;align-items:center;gap:2px;height:46px;padding:0 6px;background:var(--surface);border-bottom:1px solid var(--line);grid-column:1;grid-row:1}
+  #mbar .btn.icon{width:36px;height:36px}
+  #mbar .btn.icon svg{width:18px;height:18px}
+  #mTitle{flex:1;min-width:0;font-weight:650;font-size:15px;padding:8px;border-radius:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #mTitle:active{background:var(--surface-2)}
+  #board{grid-column:1;grid-row:2}
+  /* the sidebar becomes a slide-in drawer behind the menu button */
+  body:not(.ro) #side{position:fixed;left:0;top:0;bottom:0;width:min(300px,86vw);z-index:60;border-right:1px solid var(--line);box-shadow:var(--shadow);transform:translateX(-106%);transition:transform .22s}
+  body:not(.ro).side-open #side{transform:none}
+  #scrim{position:fixed;inset:0;background:rgba(10,12,18,.35);z-index:35}
+  body.side-open #scrim,body.has-sel #scrim{display:block}
+  /* the editor becomes a bottom sheet */
+  #editor,body.ro #editor{left:0;right:0;top:auto;bottom:0;width:auto;max-height:82vh;max-height:82dvh;border-left:0;border-top:1px solid var(--line);border-radius:18px 18px 0 0;transform:translateY(106%);z-index:40}
+  body.has-sel #editor{transform:none}
   /* a shared copy is often opened on a phone: keep the participant list (for highlighting) above the board */
-  body.ro main.app{grid-template-rows:auto 1fr} body.ro #side{display:block;max-height:38vh;border-right:0;border-bottom:1px solid var(--line)}
-  body.ro #editor{width:min(320px,92vw)} }
+  body.ro main.app{grid-template-rows:46px auto 1fr}
+  body.ro #side{display:block;grid-column:1;grid-row:2;max-height:34vh;border-right:0;border-bottom:1px solid var(--line)}
+  body.ro #board{grid-column:1;grid-row:3}
+  /* board: no drag handles on touch — items are edited in the sheet; bigger tap targets; rooms keep a usable width (day width is set inline) */
+  .axis{width:44px}
+  .item{touch-action:pan-x pan-y}
+  .card{cursor:pointer}
+  .h,.grip{display:none}
+  .plus{width:26px;height:26px}
+  .item .plus{opacity:1;transform:translateY(-50%) scale(1)}
+  .add-day{width:44px;height:calc(100vh - 66px);height:calc(100dvh - 66px)}
+  .ib{width:30px;height:30px}
+  .dh2 .din,.dh2 .tin{height:32px}
+  .dh2 .tin{width:56px}
+  .rtab{height:30px}
+  .person .x{display:grid;opacity:1}
+  .xfoot{flex-wrap:wrap}
+  /* 16px inputs stop iOS from zooming the page on focus */
+  .din,.tin,.txt,textarea,select{font-size:16px}
+}
 @media print{
   aside,.add-day,.edge,.plus,.h,.now,.ib{display:none!important}
   body{overflow:visible;background:#fff;height:auto}
@@ -395,6 +433,14 @@ body.ro .rtab input{pointer-events:none}
 </head>
 <body>
 <main class="app">
+  <div id="mbar">
+    <button class="btn icon" id="mMenu" title="Menu: participants, new/open/save, export, theme, zoom"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    <div id="mTitle" title="Tap to rename the agenda"></div>
+    <button class="btn icon" id="mUndo" title="Undo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
+    <button class="btn icon" id="mRedo" title="Redo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
+    <button class="btn icon" id="mSave" title="Save"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v5h8M7 21v-7h10v7"/></svg></button>
+    <button class="btn icon" id="mExport" title="Export: preview, then copy or download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 8l5-5 5 5M5 21h14"/></svg></button>
+  </div>
   <aside id="side">
     <div class="side-top">
       <div class="titlebar">
@@ -436,6 +482,7 @@ body.ro .rtab input{pointer-events:none}
   <aside id="editor"></aside>
 </main>
 <input type="file" id="fileInput" accept=".json,application/json" hidden>
+<div id="scrim"></div>
 <div id="toast"></div>
 
 <script>
@@ -533,7 +580,10 @@ function ask(msg, okLabel = 'OK', danger = false, input = null) {
 
 /* ---------- state ---------- */
 let doc, hist = [], hi = 0;
-const ui = { sel: null, hl: null, ppm: LS.get('agenda.ppm', 2), help: LS.get('agenda.help', true), editPid: null,
+/* Small screens (phones) get a tap-based UI: top bar + drawer, bottom-sheet editor, no drag-and-drop. */
+const mqM = matchMedia('(max-width:760px)');
+const isMobile = () => mqM.matches;
+const ui = { sel: null, hl: null, ppm: LS.get('agenda.ppm', mqM.matches ? 1.2 : 2), help: LS.get('agenda.help', true), editPid: null,
   handle: null, fileName: null, savedJson: null, drag: null, focusTitle: false, justDragged: false, hideSensitive: !RO && LS.get('agenda.hideSensitive', false) };   // a shared copy is already filtered
 const getDay = id => doc.days.find(d => d.id === id);
 const findItem = id => { for (const d of doc.days) { const it = d.items.find(i => i.id === id); if (it) return { day: d, it }; } return null; };
@@ -945,6 +995,8 @@ function renderAll() {
 function renderTop() {
   const t = $('#docTitle'); if (document.activeElement !== t) { t.value = doc.title; grow(t); }
   const dirty = !RO && isDirty(), st = $('#status');
+  const mt = $('#mTitle'); if (mt) mt.textContent = doc.title || 'Untitled agenda';
+  const ms = $('#mSave'); if (ms) ms.classList.toggle('on', !!dirty);
   st.classList.toggle('dirty', dirty);
   if (RO) {
     st.innerHTML = `<span class="ro-badge">Read-only</span><span class="t">${RO.exported ? 'Shared ' + esc(RO.exported) : 'Shared copy'}</span>`;
@@ -957,6 +1009,7 @@ function renderTop() {
   st.title = ui.handle ? 'Ctrl+S saves straight back to this file' : ui.fileName ? 'Ctrl+S downloads a new copy (this browser can’t write to the original file)' : 'Ctrl+S to save';
   if (ui.fileName && !ui.handle) st.querySelector('.t').textContent += ' (download)';
   $('#undo').disabled = hi <= 0; $('#redo').disabled = hi >= hist.length - 1;
+  $('#mUndo').disabled = hi <= 0; $('#mRedo').disabled = hi >= hist.length - 1;
   $('#snap').value = String(doc.snap); $('#zoom').value = String(ui.ppm);
   $('#helpBtn').classList.toggle('on', !!ui.help);
   $('#hideSens').checked = !!ui.hideSensitive;
@@ -1006,6 +1059,7 @@ function renderSide() {
 
 function renderBoard() {
   const ax = axisRange(), ppm = ui.ppm, H = (ax.e - ax.s) * ppm, today = isoToday();
+  const mob = isMobile();
   const nd = new Date(), nowM = nd.getHours() * 60 + nd.getMinutes();
   const roomsMax = Math.max(1, ...doc.days.map(d => (d.rooms || []).length));
   const headH = roomsMax > 1 ? 118 : 86;
@@ -1038,7 +1092,10 @@ function renderBoard() {
     const now = d.date === today && nowM >= ax.s && nowM <= ax.e ? `<div class="now" style="top:${(nowM - ax.s) * ppm}px"></div>` : '';
     const roA = RO ? ' readonly tabindex="-1"' : '';
     const strip = roomsMax > 1 ? `<div class="dh4">${d.rooms.map((r, ri) => `<div class="rtab" data-room="${r.id}"><input class="rin"${roA} data-k="roomname" value="${esc(r.name)}" placeholder="Room ${ri + 1}" spellcheck="false" title="Room name"><button class="x" data-act="delroom" title="Delete this room (its items move to another room)">${ICON_X}</button></div>`).join('')}</div>` : '';
-    return `<section class="day" data-day="${d.id}"${roomsMax > 1 ? ' style="max-width:880px"' : ''}>
+    const dayStyle = mob
+      ? ` style="flex:0 0 ${Math.max(board.clientWidth - 74, d.rooms.length * 170 + 24)}px;max-width:none"`   // one day per view; rooms keep a usable width
+      : (roomsMax > 1 ? ' style="max-width:880px"' : '');
+    return `<section class="day" data-day="${d.id}"${dayStyle}>
       <div class="day-head">
         <div class="dh1"><span class="dnum">Day ${i + 1}</span><span class="wd">${esc(weekday(d))}</span><span class="sp"></span>
           <button class="ib" data-act="addroom" title="Add a room (parallel track) to this day">+</button>
@@ -1052,7 +1109,7 @@ function renderBoard() {
       <div class="day-body" style="height:${H}px">
         <div class="win" style="top:${wt}px;height:${wh}px;background-position:0 ${-wt - 1}px">
           <div class="edge top"><div class="grip" data-h="daystart" title="Drag to change when the day starts">${ICON_GRIP}${fmt(d.start)}</div><button class="plus" data-plus="daystart" title="Add item at start of day">+</button></div>
-          ${vis.length ? '' : `<div class="empty">${RO ? 'Nothing scheduled' : 'Click + or double-click<br>to add an agenda item'}</div>`}
+          ${vis.length ? '' : `<div class="empty">${RO ? 'Nothing scheduled' : mob ? 'Tap + or tap empty time<br>to add an item' : 'Click + or double-click<br>to add an agenda item'}</div>`}
           <div class="edge bot"><div class="grip" data-h="dayend" title="Drag to change when the day ends">${ICON_GRIP}${fmt(d.end)}</div><button class="plus" data-plus="dayend" title="Add item at end of day">+</button></div>
         </div>
         <div class="rooms">${rooms}${spans}</div>${now}
@@ -1101,7 +1158,14 @@ function renderEditor() {
   document.body.classList.toggle('no-editor', !f && !ui.help);
   if (RO) return renderDetails(el, f);
   if (!f) {
-    el.innerHTML = `<div class="panel hint"><h3>How it works <button class="ib" data-e="hidehelp" title="Hide (show again with ? in the toolbar)">${ICON_X}</button></h3><ul>
+    el.innerHTML = isMobile() ? `<div class="panel hint"><h3>How it works <button class="ib" data-e="hidehelp" title="Hide (show again with the ? button in the menu)">${ICON_X}</button></h3><ul>
+      <li><span class="k">☰</span><span><b>Menu</b> (top left) has participants, new/open/save, export, theme and zoom.</span></li>
+      <li><span class="k">✎</span><span><b>Tap an item</b> to edit its title, time, room, people and notes in this sheet.</span></li>
+      <li><span class="k">+</span><span><b>Tap +</b> on an item or at the day's start/end — or <b>tap empty time</b> — to add an item there.</span></li>
+      <li><span class="k">↔</span><span>Swipe sideways for the next day; on multi-room days the rooms scroll with it and can be renamed in the day header.</span></li>
+      <li><span class="k">⚠</span><span>A red <b>overbooked</b> flag marks people who are in two overlapping items.</span></li></ul>
+      <p class="small muted" style="margin-top:20px">No drag-and-drop on small screens — everything is editable in this sheet. Close it with ✕ or by tapping outside.</p></div>`
+    : `<div class="panel hint"><h3>How it works <button class="ib" data-e="hidehelp" title="Hide (show again with ? in the toolbar)">${ICON_X}</button></h3><ul>
       <li><span class="k">+</span><span><b>Insert</b> with the + on any item edge, or at the start/end of a day.</span></li>
       <li><span class="k">↕</span><span><b>Drag edges</b> to resize. Touching items are glued: the shared boundary moves both.</span></li>
       <li><span class="k">✥</span><span><b>Drag the body</b> to move both edges at once; touching neighbours stretch to follow. Drag further to unglue it and drop it anywhere: other items make room. <kbd>Shift</kbd>-drag moves freely without reflowing.</span></li>
@@ -1262,6 +1326,11 @@ board.addEventListener('pointerdown', e => {
     return;
   }
   if (e.target.closest('.plus,input,button,select,textarea')) return;
+  if (isMobile()) {   // no drag-and-drop on small screens: a tap just selects the item and opens the sheet
+    const itemEl = e.target.closest('.item');
+    if (itemEl && ui.sel !== itemEl.dataset.id) { ui.sel = itemEl.dataset.id; renderAll(); }
+    return;
+  }
   const h = e.target.closest('[data-h]'), itemEl = e.target.closest('.item'), dayEl = e.target.closest('.day'), roomEl = e.target.closest('.room');
   if (!dayEl || (!h && !itemEl)) return;
   const mode = h ? h.dataset.h : 'move', itemId = itemEl ? itemEl.dataset.id : null;
@@ -1346,6 +1415,15 @@ board.addEventListener('click', e => {
     dayAction(act.dataset.act, act.closest('.day')?.dataset.day, act.closest('[data-room]')?.dataset.room); return;
   }
   const fromItem = ui.downOnItem; ui.downOnItem = false;
+  if (!RO && isMobile() && !ui.sel) {   // on touch, a tap on empty time inserts an item there (desktop uses double-click)
+    const roomEl = e.target.closest('.room');
+    if (roomEl && !e.target.closest('.item,.day-head,.edge,button,input')) {
+      const day = getDay(roomEl.dataset.day), ax = axisRange(), r = roomEl.getBoundingClientRect();
+      const t = Math.floor((ax.s + (e.clientY - r.top) / ui.ppm) / 15) * 15;
+      insertFree(day, clamp(t, 0, MAX - 30), roomEl.dataset.room);
+      return;
+    }
+  }
   if (!fromItem && !e.target.closest('.item,.day-head,input,button') && ui.sel) { ui.sel = null; renderAll(); }
 });
 board.addEventListener('dblclick', e => {
@@ -1541,6 +1619,17 @@ $('#hideSens').onchange = e => {
 };
 $('#newBtn').onclick = newAgenda; $('#openBtn').onclick = openFile; $('#saveBtn').onclick = () => save(false);
 $('#exportBtn').onclick = () => openExport();
+/* mobile top bar, drawer and scrim */
+$('#mMenu').onclick = () => document.body.classList.toggle('side-open');
+$('#mTitle').onclick = () => { document.body.classList.add('side-open'); setTimeout(() => { titleIn.focus(); titleIn.select(); }, 260); };
+$('#mUndo').onclick = () => undo(); $('#mRedo').onclick = () => redo();
+$('#mSave').onclick = () => save(false);
+$('#mExport').onclick = () => openExport();
+$('#scrim').onclick = () => { document.body.classList.remove('side-open'); if (ui.sel) { ui.sel = null; renderAll(); } };
+$('#side').addEventListener('click', e => {   // close the drawer after a menu action so the board is visible again
+  if (isMobile() && e.target.closest('button,.person:not(.editing)')) document.body.classList.remove('side-open');
+});
+mqM.addEventListener('change', () => { document.body.classList.remove('side-open'); renderAll(); });
 
 document.addEventListener('keydown', e => {
   if (document.querySelector('.modal')) return;
